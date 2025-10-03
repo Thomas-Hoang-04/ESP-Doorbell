@@ -1,2 +1,6 @@
 CompileFlags:
     Remove: [-f*, -m*]
+
+Diagnostics:
+    Suppress:
+        - unused-includes
