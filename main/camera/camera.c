@@ -1,4 +1,5 @@
 #include "camera.h"
+#include "esp_log.h"
 
 camera_config_t camera_config = {
     .pin_pwdn = CAM_PIN_PWDN,
@@ -32,11 +33,6 @@ camera_config_t camera_config = {
 };
 
 esp_err_t camera_init(void) {
-    if (CAM_PIN_PWDN != GPIO_NUM_NC) {
-        gpio_set_direction(CAM_PIN_PWDN, GPIO_MODE_OUTPUT);
-        gpio_set_level(CAM_PIN_PWDN, 0);
-    }
-
     esp_err_t ret = esp_camera_init(&camera_config);
     if (ret != ESP_OK) {
         ESP_LOGE(CAMERA_TAG, "Camera init failed");

@@ -1,10 +1,7 @@
-#ifndef CAMERA_H
-#define CAMERA_H
+#ifndef DOORBELL_VIDEO_SRC_H
+#define DOORBELL_VIDEO_SRC_H
 
-#include "esp_err.h"
-#include "esp_camera.h"
-
-#define CAMERA_TAG "CAMERA"
+#define AV_TAG "AV_MP4_TEST"
 
 // Camera Control Pins Mapping
 #define CAM_PIN_PWDN GPIO_NUM_NC
@@ -34,8 +31,4 @@
 #define CAMERA_FB_COUNT 1
 #define CAMERA_GRAB_MODE CAMERA_GRAB_WHEN_EMPTY
 
-extern camera_config_t camera_config;
-
-esp_err_t camera_init(void);
-
-#endif
+#endif //DOORBELL_VIDEO_SRC_H

@@ -11,7 +11,6 @@
 #include "driver/sdmmc_host.h"
 #include "ff.h"
 #include "sdmmc_cmd.h"
-#include "esp_system.h"
 #include "sys/dirent.h"
 
 // SD Card Reference
@@ -19,8 +18,6 @@ sdmmc_card_t *card;
 
 // SD Card Management Functions
 esp_err_t mount_sd_card(void) {
-    esp_err_t ret;
-
     esp_vfs_fat_sdmmc_mount_config_t mount_cfg = {
         .format_if_mount_failed = false,
         .max_files = MAX_FILES,
@@ -42,11 +39,10 @@ esp_err_t mount_sd_card(void) {
 
     slot_cfg.flags |= SDMMC_SLOT_FLAG_INTERNAL_PULLUP | SDMMC_SLOT_FLAG_UHS1;
 
-    ret = esp_vfs_fat_sdmmc_mount(MOUNT_POINT, &host, &slot_cfg, &mount_cfg, &card);
+    esp_err_t ret = esp_vfs_fat_sdmmc_mount(MOUNT_POINT, &host, &slot_cfg, &mount_cfg, &card);
     if (ret != ESP_OK) {
         ESP_LOGE(SD_TAG, "Failed to mount SD Card: %d", esp_err_to_name(ret));
         vTaskDelay(1000 / portTICK_PERIOD_MS);
-        esp_restart();
         return ret;
     }
 
@@ -54,7 +50,7 @@ esp_err_t mount_sd_card(void) {
 
     ESP_LOGI(SD_TAG, "SD Card mounted successfully");
 
-    return ESP_OK;
+    return ret;
 }
 
 esp_err_t unmount_sd_card(void) {
@@ -72,7 +68,7 @@ esp_err_t format_sd_card(void) {
 }
 
 // SD Card File Management Functions
-esp_err_t write_to_sd(const char *filename, uint8_t* data, size_t size, char* mode) {
+esp_err_t write_to_sd(const char *filename, uint8_t* data, const size_t size, const char* mode) {
     ESP_LOGI(SD_TAG, "Writing to SD Card: %s", filename);
 
     FILE *f = fopen(filename, mode);
@@ -81,8 +77,8 @@ esp_err_t write_to_sd(const char *filename, uint8_t* data, size_t size, char* mo
         return ESP_FAIL;
     }
 
-    if (strcmp(mode, "w") || strcmp(mode, "a"))
-        fprintf(f, "%s", data);
+    if (strcmp(mode, "w") != 0 || strcmp(mode, "a") != 0)
+        fprintf(f, "%s", (char*)data);
     else {
         size_t bytes_written = fwrite(data, 1, size, f);
         if (bytes_written != size) {
@@ -95,7 +91,7 @@ esp_err_t write_to_sd(const char *filename, uint8_t* data, size_t size, char* mo
     return ESP_OK;
 }
 
-esp_err_t read_from_sd(const char *filename, uint8_t* data, size_t size, char* mode) {
+esp_err_t read_from_sd(const char *filename, uint8_t* data, const size_t size, const char* mode) {
     ESP_LOGI(SD_TAG, "Reading from SD Card: %s", filename);
 
     FILE *f = fopen(filename, mode);
@@ -185,12 +181,42 @@ void get_sd_card_info(void) {
     FATFS *fs;
     DWORD fre_clust;
 
-    if (f_getfree("0:", &fre_clust, &fs) == FR_OK) {
+    if (f_getfree(MOUNT_POINT, &fre_clust, &fs) == FR_OK) {
         uint64_t total_bytes = ((uint64_t)(fs->n_fatent - 2) * fs->csize * 512);
         uint64_t free_bytes = ((uint64_t)fre_clust * fs->csize * 512);
-        
+
         ESP_LOGI(SD_TAG, "SD Card Size: %llu MB", total_bytes / (1024 * 1024));
         ESP_LOGI(SD_TAG, "Free Space: %llu MB", free_bytes / (1024 * 1024));
         ESP_LOGI(SD_TAG, "Used Space: %llu MB", (total_bytes - free_bytes) / (1024 * 1024));
+    } else {
+        ESP_LOGW(SD_TAG, "Failed to query free clusters");
     }
+
+    DIR *dir = opendir(MOUNT_POINT);
+    if (dir == NULL) {
+        ESP_LOGE(SD_TAG, "Failed to open directory: %s", MOUNT_POINT);
+        return;
+    }
+
+    ESP_LOGI(SD_TAG, "Listing files under %s:", MOUNT_POINT);
+    struct dirent *entry;
+    char full_path[1024];
+    while ((entry = readdir(dir)) != NULL) {
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+        snprintf(full_path, sizeof(full_path), "%s/%s", MOUNT_POINT, entry->d_name);
+        struct stat st;
+        if (stat(full_path, &st) != 0) {
+            ESP_LOGW(SD_TAG, "  [???] %s (stat failed)", entry->d_name);
+            continue;
+        }
+
+        if (S_ISDIR(st.st_mode)) {
+            ESP_LOGI(SD_TAG, "  [DIR ] %s", entry->d_name);
+        } else {
+            ESP_LOGI(SD_TAG, "  [FILE] %s (%ld bytes)", entry->d_name, st.st_size);
+        }
+    }
+    closedir(dir);
 }

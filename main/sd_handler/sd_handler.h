@@ -29,8 +29,8 @@ esp_err_t unmount_sd_card(void);
 esp_err_t format_sd_card(void);
 
 // SD Card File Management Functions
-esp_err_t write_to_sd(const char *filename, uint8_t* data, size_t size, char* mode);
-esp_err_t read_from_sd(const char *filename, uint8_t* data, size_t size, char* mode);
+esp_err_t write_to_sd(const char *filename, uint8_t* data, size_t size, const char* mode);
+esp_err_t read_from_sd(const char *filename, uint8_t* data, size_t size, const char* mode);
 esp_err_t delete_from_sd(const char *filename);
 
 // SD Card Information Functions
@@ -38,5 +38,15 @@ void list_files_on_sd(const char* path);
 bool file_exists_on_sd(const char *filename);
 uint64_t get_file_size_on_sd(const char *filename);
 void get_sd_card_info(void);
+
+/**
+ * @brief Run a basic read/write regression on the mounted SD card.
+ *
+ * This helper writes a deterministic payload,
+ * reads it back for verification, and emits detailed logs with timing and
+ * error information. Invoke from application code whenever you need to
+ * validate wiring or storage integrity.
+ */
+void sd_card_self_test(void);
 
 #endif
