@@ -1,0 +1,29 @@
+#pragma once
+
+#include "../sd_handler/sd_handler.h"
+
+#define AV_CAPTURE_MP4_DURATION_SEC 30
+
+#define AV_CAPTURE_MP4_AUDIO_SAMPLE_RATE 16000
+
+#define AV_CAPTURE_MP4_AUDIO_CHANNELS 2
+
+#define AV_CAPTURE_MP4_AUDIO_BITS 16
+
+#define AV_CAPTURE_MP4_AUDIO_BITRATE 128000
+
+#define AV_CAPTURE_MP4_VIDEO_WIDTH 1280
+
+#define AV_CAPTURE_MP4_VIDEO_HEIGHT 720
+
+#define AV_CAPTURE_MP4_VIDEO_FPS 24
+
+#define AV_CAPTURE_MP4_VIDEO_BUF_COUNT 4
+
+#define AV_CAPTURE_MP4_VIDEO_XCLK_FREQ 20000000
+
+#define AV_CAPTURE_MP4_ALC_GAIN_DB 36
+
+#define AV_CAPTURE_MP4_OUTPUT MOUNT_POINT "/av_capture_test.mp4"
+
+void av_capture_mp4_test(void);

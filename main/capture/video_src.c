@@ -17,8 +17,6 @@
 #include "mp4_muxer.h"
 #include "esp_audio_enc_default.h"
 
-#include "../camera/camera.h"
-
 #include "video_src.h"
 
 #include <sys/errno.h>

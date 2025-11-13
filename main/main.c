@@ -1,5 +1,4 @@
 #include "esp_err.h"
-#include "esp_http_server.h"
 #include "esp_interface.h"
 #include "nvs_flash.h"
 #include "esp_check.h"
@@ -7,10 +6,7 @@
 #include "esp_log.h"
 
 #include "network/wifi.h"
-#include "camera/camera.h"
 #include "sd_handler/sd_handler.h"
-#include "test/i2s_capture_esp_test.h"
-#include "test/av_capture_mp4_test.h"
 #include "time/time_sync.h"
 
 #define TAG "MAIN"
