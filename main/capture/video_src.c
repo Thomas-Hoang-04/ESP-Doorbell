@@ -24,6 +24,9 @@
 #include <sys/errno.h>
 #include <sys/stat.h>
 
+#include "esp_vfs.h"
+#include "../time/time_sync.h"
+
 av_handles_t av_handles = {0};
 
 av_task_handle_t av_task_handles = {0};
@@ -31,8 +34,14 @@ av_task_handle_t av_task_handles = {0};
 static int mp4_url_pattern(char *file_path, int len, int slice_idx)
 {
     if (len <= 0) { return -1; }
-    // TODO: Generate unique file names for each slice if needed
-    strlcpy(file_path, AV_CAPTURE_MP4_DIR, len);
+    static char _filename[255];
+    time_t current_time = get_unix_timestamp();
+    struct tm *time_info = gmtime(&current_time);
+    static char timestamp[32] = {0};
+    strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S_%Z", time_info);
+    memset(_filename, 0, sizeof(_filename));
+    snprintf(_filename, sizeof(_filename), "%s/capture-%s-%d.mp4", AV_CAPTURE_MP4_DIR, timestamp, slice_idx);
+    strlcpy(file_path, _filename, len);
     return 0;
 }
 
