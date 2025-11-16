@@ -4,3 +4,7 @@ managed_components/
 .idea/
 cursor.*
 cmake-build-debug/
+
+!README.md
+
+*.md
