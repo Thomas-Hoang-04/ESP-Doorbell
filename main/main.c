@@ -1,13 +1,19 @@
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
 #include "esp_err.h"
+#include "esp_timer.h"
 #include "esp_interface.h"
 #include "nvs_flash.h"
 #include "esp_check.h"
 #include "esp_netif.h"
 #include "esp_log.h"
+#include "capture/video_src.h"
 
 #include "network/wifi.h"
 #include "sd_handler/sd_handler.h"
 #include "time/time_sync.h"
+#include "websocket/ws_stream.h"
 
 #define TAG "MAIN"
 
@@ -38,4 +44,28 @@ void app_main(void)
     time_sync_init();
     time_set_timezone("UTC-7");
     ESP_ERROR_CHECK(time_sync_wait(30));
+
+    int64_t suspend_time_us = esp_timer_get_time() + ((int64_t)60 * 1000000LL);
+    ESP_LOGI(TAG, "Initializing AV capture...");
+    capture_setup();
+    
+    ESP_LOGI(TAG, "Initializing WebSocket streaming...");
+    ESP_ERROR_CHECK(ws_stream_init(NULL));
+    
+    start_capture_task();
+    while (esp_timer_get_time() < suspend_time_us) {
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+    suspend_capture_task();
+    vTaskDelay(pdMS_TO_TICKS(100));
+    int64_t end_time_us = esp_timer_get_time() + ((int64_t)60 * 1000000LL);
+    resume_capture_task();
+    while (esp_timer_get_time() < end_time_us) {
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+    
+    ESP_LOGI(TAG, "Cleaning up WebSocket streaming...");
+    ws_stream_destroy();
+    
+    destroy_av_tasks();
 }

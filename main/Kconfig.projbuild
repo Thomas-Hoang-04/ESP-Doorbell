@@ -19,5 +19,103 @@ menu "Network Configuration"
             help
                 Set the Maximum retry to avoid station reconnecting to the AP unlimited when the AP is really inexistent.
     endmenu
+
+    menu "WebSocket Streaming"
+        config WS_STREAM_URI
+            string "WebSocket Server URI"
+            default "ws://192.168.1.100:8080/stream"
+            help
+                WebSocket server URI (ws:// or wss://) for streaming.
+
+        config WS_STREAM_VIDEO_QUEUE_SIZE
+            int "Video frame queue depth"
+            default 24
+            range 5 50
+            help
+                Number of video frames to buffer (24 = 1 second at 24fps).
+
+        config WS_STREAM_AUDIO_QUEUE_SIZE
+            int "Audio frame queue depth"
+            default 50
+            range 10 100
+            help
+                Number of audio frames to buffer.
+
+        config WS_STREAM_RECONNECT_TIMEOUT_MS
+            int "Reconnection timeout (ms)"
+            default 5000
+            range 1000 60000
+            help
+                Time to wait before attempting reconnection.
+    endmenu
+
+    menu "MQTT Configuration"
+        config MQTT_BROKER_URL
+            string "MQTT Broker URL"
+            default "mqtt://mqtt.thingsboard.cloud"
+            help
+                URL of the broker to connect to
+
+        config MQTT_BROKER_PORT
+            int "MQTT Broker Port"
+            range 1 65535
+            default 1883
+            help
+                Port of the MQTT broker to use
+
+        choice MQTT_AUTH_METHOD
+            prompt "MQTT Authentication Method"
+            default MQTT_AUTH_USERNAME_PASSWORD
+            help
+                Choose the authentication method for MQTT connection
+
+            config MQTT_AUTH_USERNAME_PASSWORD
+                bool "Username and Password"
+                help
+                    Use traditional username and password authentication
+
+            config MQTT_AUTH_ACCESS_TOKEN
+                bool "Access Token"
+                help
+                    Use access token authentication (ThingsBoard style)
+        endchoice
+
+        config MQTT_USERNAME
+            string "MQTT Username"
+            default "device"
+            depends on MQTT_AUTH_USERNAME_PASSWORD
+            help
+                MQTT username for authentication
+
+        config MQTT_PASSWORD
+            string "MQTT Password"
+            default "password"
+            depends on MQTT_AUTH_USERNAME_PASSWORD
+            help
+                MQTT password for authentication
+
+        config MQTT_ACCESS_TOKEN
+            string "MQTT Access Token"
+            default "YOUR_DEVICE_ACCESS_TOKEN"
+            depends on MQTT_AUTH_ACCESS_TOKEN
+            help
+                Access token for MQTT authentication (used as username, password left empty)
+
+        config MQTT_CLIENT_ID
+            string "MQTT Client ID"
+            default "esp32_device"
+            help
+                MQTT client identifier
+    endmenu
+
+    menu "Topic Configuration"
+
+        config TB_TELEMETRY_TOPIC
+            string "Telemetry Topic"
+            default "v1/devices/me/telemetry"
+            help
+                Topic for sending telemetry data
+
+    endmenu
     
 endmenu

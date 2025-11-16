@@ -17,3 +17,4 @@ dependencies:
   espressif/esp32-camera: ^2.1.2
   espressif/esp_capture: ^0.7.6
   espressif/esp_websocket_client: ^1.5.0
+#  espressif/esp_peer: ^1.2.6

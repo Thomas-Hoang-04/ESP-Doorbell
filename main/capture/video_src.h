@@ -1,7 +1,9 @@
 #ifndef DOORBELL_VIDEO_SRC_H
 #define DOORBELL_VIDEO_SRC_H
 
+#include "freertos/task.h"
 #include "esp_capture.h"
+#include "esp_capture_types.h"
 #include "esp_capture_sink.h"
 #include "esp_err.h"
 #include "driver/i2c_master.h"
@@ -10,52 +12,42 @@
 
 #define AV_LOG_TAG "AV_CAPTURE"
 #define AV_VIDEO_TAG "AV_MP4"
-#define AV_STREAM_TAG "AV_STREAM"
 
-// Camera Control Pins Mapping
-#define CAM_PIN_PWDN GPIO_NUM_NC
-#define CAM_PIN_RESET GPIO_NUM_NC
-#define CAM_PIN_XCLK GPIO_NUM_15
-#define CAM_PIN_SIOD GPIO_NUM_4
-#define CAM_PIN_SIOC GPIO_NUM_5
-#define CAM_PIN_VSYNC GPIO_NUM_6
-#define CAM_PIN_HREF GPIO_NUM_7
-#define CAM_PIN_PCLK GPIO_NUM_13
+#define CAM_PIN_PWDN    GPIO_NUM_NC
+#define CAM_PIN_RESET   GPIO_NUM_NC
+#define CAM_PIN_XCLK    GPIO_NUM_15
+#define CAM_PIN_SIOD    GPIO_NUM_4
+#define CAM_PIN_SIOC    GPIO_NUM_5
+#define CAM_PIN_VSYNC   GPIO_NUM_6
+#define CAM_PIN_HREF    GPIO_NUM_7
+#define CAM_PIN_PCLK    GPIO_NUM_13
+#define CAM_PIN_D7      GPIO_NUM_16
+#define CAM_PIN_D6      GPIO_NUM_17
+#define CAM_PIN_D5      GPIO_NUM_18
+#define CAM_PIN_D4      GPIO_NUM_12
+#define CAM_PIN_D3      GPIO_NUM_10
+#define CAM_PIN_D2      GPIO_NUM_8
+#define CAM_PIN_D1      GPIO_NUM_9
+#define CAM_PIN_D0      GPIO_NUM_11
 
-// Camera Data Pins Mapping
-#define CAM_PIN_D7 GPIO_NUM_16
-#define CAM_PIN_D6 GPIO_NUM_17
-#define CAM_PIN_D5 GPIO_NUM_18
-#define CAM_PIN_D4 GPIO_NUM_12
-#define CAM_PIN_D3 GPIO_NUM_10
-#define CAM_PIN_D2 GPIO_NUM_8
-#define CAM_PIN_D1 GPIO_NUM_9
-#define CAM_PIN_D0 GPIO_NUM_11
+#define CAMERA_XCLK_FREQ_HZ     (20 * 1000 * 1000)
+#define CAMERA_SCCB_I2C_PORT    I2C_NUM_0
+#define CAMERA_BUFFER_COUNT     2
 
-// Camera Configuration
-#define CAMERA_XCLK_FREQ_HZ (20 * 1000 * 1000)
-#define CAMERA_SCCB_I2C_PORT I2C_NUM_0
-#define CAMERA_BUFFER_COUNT 4
+#define VIDEO_FORMAT            ESP_CAPTURE_FMT_ID_MJPEG
+#define VIDEO_WIDTH             1280
+#define VIDEO_HEIGHT            720
+#define VIDEO_FPS               24
 
-// Camera Video Format
-#define VIDEO_FORMAT ESP_CAPTURE_FMT_ID_MJPEG
-#define VIDEO_WIDTH 1280
-#define VIDEO_HEIGHT 720
-#define VIDEO_FPS 24
+#define AUDIO_FORMAT            ESP_CAPTURE_FMT_ID_AAC
+#define AUDIO_SAMPLE_RATE       16000
+#define AUDIO_CHANNELS          2
+#define AUDIO_BITS_PER_SAMPLE   16
 
-// Audio Configuration
-#define AUDIO_FORMAT ESP_CAPTURE_FMT_ID_AAC
-#define AUDIO_SAMPLE_RATE 16000
-#define AUDIO_CHANNELS 2
-#define AUDIO_BITS_PER_SAMPLE 16
-
-// Muxer Configuration
-#define AV_MUXER_TYPE ESP_MUXER_TYPE_MP4
-#define AV_CAPTURE_MP4_DURATION_SEC (30 * 1000)
-#define AV_MUXER_CACHE_SIZE (16 * 1024)
-
-// Default MP4 output file on SD card
-#define AV_CAPTURE_MP4_DIR MOUNT_POINT"/video"
+#define AV_MUXER_TYPE                   ESP_MUXER_TYPE_MP4
+#define AV_CAPTURE_MP4_DURATION_MSEC    (30 * 1000)
+#define AV_MUXER_CACHE_SIZE             (16 * 1024)
+#define AV_CAPTURE_MP4_DIR              MOUNT_POINT"/video"
 
 /**
  * @brief Default DVP video source configuration macro
@@ -70,14 +62,8 @@
     .href_pin = CAM_PIN_HREF, \
     .pclk_pin = CAM_PIN_PCLK, \
     .i2c_port = CAMERA_SCCB_I2C_PORT, \
-    .data[0] = CAM_PIN_D0, \
-    .data[1] = CAM_PIN_D1, \
-    .data[2] = CAM_PIN_D2, \
-    .data[3] = CAM_PIN_D3, \
-    .data[4] = CAM_PIN_D4, \
-    .data[5] = CAM_PIN_D5, \
-    .data[6] = CAM_PIN_D6, \
-    .data[7] = CAM_PIN_D7, \
+    .data = {CAM_PIN_D0, CAM_PIN_D1, CAM_PIN_D2, CAM_PIN_D3, \
+             CAM_PIN_D4, CAM_PIN_D5, CAM_PIN_D6, CAM_PIN_D7} \
 }
 
 /**
@@ -98,15 +84,12 @@
 typedef struct {
     esp_capture_audio_src_if_t *audio_src;
     esp_capture_video_src_if_t *video_src;
-    esp_capture_handle_t capture;
-    esp_capture_sink_handle_t video_sink;
-    esp_capture_sink_handle_t stream_sink;
-    i2c_master_bus_handle_t sccb_i2c_bus;
-    bool capture_initialized;
-    bool capture_started;
-    bool streaming_started;
-    bool video_sink_enabled;
-    bool stream_sink_enabled;
+    esp_capture_handle_t        capture;
+    esp_capture_sink_handle_t   video_sink;
+    i2c_master_bus_handle_t     sccb_i2c_bus;
+    bool                        capture_initialized;
+    bool                        capture_started;
+    bool                        streaming_enabled;
 } av_handles_t;
 
 /**
@@ -115,17 +98,9 @@ typedef struct {
 extern av_handles_t av_handles;
 
 /**
- * @brief Struct to hold AV task handles
+ * @brief Global AV capture task handle
  */
-typedef struct {
-    TaskHandle_t stream_task;
-    TaskHandle_t capture_task;
-} av_task_handle_t;
-
-/**
- * @brief Global AV capture task handles
- */
-extern av_task_handle_t av_task_handles;
+extern TaskHandle_t capture_task;
 
 /**
  * @brief Setup audio and video capture
@@ -135,46 +110,27 @@ extern av_task_handle_t av_task_handles;
 esp_err_t capture_setup(void);
 
 /**
- * @brief Start audio and video capture to SD card
+ * @brief Start audio and video capture task
  */
 void start_capture_task(void);
 
 /**
- * @brief Start audio and video streaming
- */
-void start_streaming_task(void);
-
-/**
- * @brief Stop audio and video capture and streaming
+ * @brief Stop audio and video capture and release resources
  */
 void destroy_av_tasks(void);
-
-/**
- * @brief Suspend AV streaming task
- *
- * @return ESP_CAPTURE_ERR_OK on success, error code otherwise
- */
-esp_capture_err_t suspend_streaming_tasks(void);
-
-/**
- * @brief Resume AV streaming task
- *
- * @return ESP_CAPTURE_ERR_OK on success, error code otherwise
- */
-esp_capture_err_t resume_streaming_tasks(void);
 
 /**
  * @brief Suspend AV capture task
  *
  * @return ESP_CAPTURE_ERR_OK on success, error code otherwise
  */
-esp_capture_err_t suspend_capture_tasks(void);
+esp_capture_err_t suspend_capture_task(void);
 
 /**
  * @brief Resume AV capture task
  *
  * @return ESP_CAPTURE_ERR_OK on success, error code otherwise
  */
-esp_capture_err_t resume_capture_tasks(void);
+esp_capture_err_t resume_capture_task(void);
 
 #endif //DOORBELL_VIDEO_SRC_H
