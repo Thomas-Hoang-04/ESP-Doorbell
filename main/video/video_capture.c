@@ -10,12 +10,12 @@
 #include "esp_log.h"
 #include "esp_check.h"
 
-#include "audio_i2s_src.h"
+#include "../audio/audio_i2s_capture.h"
 #include "impl/esp_capture_video_dvp_src.h"
 #include "mp4_muxer.h"
 #include "esp_audio_enc_default.h"
 
-#include "video_src.h"
+#include "video_capture.h"
 
 #include <sys/errno.h>
 #include <sys/stat.h>
@@ -33,7 +33,9 @@ static int mp4_url_pattern(char *file_path, int len, int slice_idx)
     static char _filename[255];
     time_t current_time = get_unix_timestamp();
     struct tm *time_info = localtime(&current_time);
-    static char timestamp[32] = {0};
+    // ReSharper disable once CppReplaceMemsetWithZeroInitialization
+    static char timestamp[32];
+    memset(timestamp, 0, 32);
     strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S_%Z", time_info);
     memset(_filename, 0, sizeof(_filename));
     snprintf(_filename, sizeof(_filename), "%s/capture-%s-%d.mp4", AV_CAPTURE_MP4_DIR, timestamp, slice_idx);
@@ -95,7 +97,7 @@ esp_err_t capture_setup(void) {
     ESP_RETURN_ON_FALSE(mkdir(AV_CAPTURE_MP4_DIR, 0775) == 0 || errno == EEXIST,
                         ESP_FAIL, AV_LOG_TAG, "Failed to create directory for MP4 files");
 
-    av_handles.audio_src = esp_capture_new_audio_i2s_src(NULL);
+    av_handles.audio_src = audio_i2s_capture_new(NULL);
     ESP_RETURN_ON_FALSE(av_handles.audio_src, ESP_FAIL, AV_LOG_TAG, "Failed to create audio I2S source");
 
     i2c_master_bus_config_t i2c_mst_cfg = SCCB_DEFAULT();
@@ -163,7 +165,7 @@ void start_capture_task(void) {
     }
 }
 
-void destroy_av_tasks(void) {
+void destroy_capture_tasks(void) {
     if (av_handles.capture_initialized) {
         esp_capture_stop(av_handles.capture);
         av_handles.capture_initialized = false;
@@ -176,7 +178,7 @@ void destroy_av_tasks(void) {
     }
 
     if (av_handles.audio_src) {
-        esp_capture_delete_audio_i2s_src(av_handles.audio_src);
+        audio_i2s_capture_delete(av_handles.audio_src);
         av_handles.audio_src = NULL;
     }
 

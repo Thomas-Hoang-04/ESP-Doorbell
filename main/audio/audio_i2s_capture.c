@@ -1,5 +1,5 @@
 /*
- * Minimal esp_capture audio source that pulls PCM frames straight from an I2S microphone.
+ * I2S audio capture implementation using ESP Capture framework.
  */
 
 #include <stdlib.h>
@@ -13,7 +13,8 @@
 #include "esp_err.h"
 #include "esp_log.h"
 
-#include "audio_i2s_src.h"
+#include "audio_i2s_capture.h"
+#include "audio_i2s_common.h"
 #include "esp_capture_types.h"
 
 static size_t bytes_per_sample(const esp_capture_audio_info_t *info)
@@ -21,7 +22,7 @@ static size_t bytes_per_sample(const esp_capture_audio_info_t *info)
     return (info->bits_per_sample / 8) * info->channel;
 }
 
-static void destroy_alc(capture_audio_i2s_src_t *ctx)
+static void destroy_alc(audio_i2s_capture_t *ctx)
 {
     if (ctx->alc) {
         esp_ae_alc_close(ctx->alc);
@@ -38,25 +39,9 @@ static bool caps_supported(const esp_capture_audio_info_t *caps)
     return format_ok && bits_ok && channel_ok && rate_ok;
 }
 
-capture_audio_i2s_src_cfg_t capture_audio_i2s_src_default_config(void)
+audio_i2s_capture_cfg_t audio_i2s_capture_default_config(void)
 {
-    capture_audio_i2s_src_cfg_t cfg = {
-        .port = AUDIO_I2S_PORT,
-        .gpio_cfg = {
-            .mclk = I2S_GPIO_UNUSED,
-            .bclk = AUDIO_I2S_PIN_BCK,
-            .ws = AUDIO_I2S_PIN_WS,
-            .dout = I2S_GPIO_UNUSED,
-            .din = AUDIO_I2S_PIN_DIN,
-            .invert_flags = {
-                .bclk_inv = false,
-                .mclk_inv = false,
-                .ws_inv = false
-            }
-        },
-        .sample_rate_hz = AUDIO_AAC_SAMPLE_RATE_HZ,
-        .channel_count = AUDIO_AAC_CHANNELS,
-        .bits_per_sample = AUDIO_AAC_BITS,
+    audio_i2s_capture_cfg_t cfg = {
         .read_timeout_ms = AUDIO_AAC_READ_TIMEOUT_MS,
         .enable_alc = AUDIO_ALC_ENABLE,
         .alc_gain_db = AUDIO_ALC_GAIN_DB,
@@ -64,9 +49,9 @@ capture_audio_i2s_src_cfg_t capture_audio_i2s_src_default_config(void)
     return cfg;
 }
 
-static esp_capture_err_t i2s_src_open(esp_capture_audio_src_if_t *h)
+static esp_capture_err_t i2s_capture_open(esp_capture_audio_src_if_t *h)
 {
-    capture_audio_i2s_src_t *ctx = (capture_audio_i2s_src_t *)h;
+    audio_i2s_capture_t *ctx = (audio_i2s_capture_t *)h;
     if (ctx == NULL) {
         return ESP_CAPTURE_ERR_INVALID_ARG;
     }
@@ -74,17 +59,15 @@ static esp_capture_err_t i2s_src_open(esp_capture_audio_src_if_t *h)
         return ESP_CAPTURE_ERR_OK;
     }
 
-    i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(ctx->cfg.port, I2S_ROLE_MASTER);
-    esp_err_t err = i2s_new_channel(&chan_cfg, NULL, &ctx->rx);
-    if (err != ESP_OK || ctx->rx == NULL) {
-        ESP_LOGE(AUDIO_TAG, "New I2S channel failed: %s", esp_err_to_name(err));
-        ctx->rx = NULL;
+    ctx->rx = audio_i2s_common_get_rx_handle();
+    if (ctx->rx == NULL) {
+        ESP_LOGE(AUDIO_TAG, "I2S common not initialized. Call audio_i2s_common_init() first");
         return ESP_CAPTURE_ERR_NO_RESOURCES;
     }
     return ESP_CAPTURE_ERR_OK;
 }
 
-static esp_capture_err_t i2s_src_get_codecs(esp_capture_audio_src_if_t *h, const esp_capture_format_id_t **codecs, uint8_t *num)
+static esp_capture_err_t i2s_capture_get_codecs(esp_capture_audio_src_if_t *h, const esp_capture_format_id_t **codecs, uint8_t *num)
 {
     static const esp_capture_format_id_t supported[] = {ESP_CAPTURE_FMT_ID_PCM};
     *codecs = supported;
@@ -92,9 +75,9 @@ static esp_capture_err_t i2s_src_get_codecs(esp_capture_audio_src_if_t *h, const
     return ESP_CAPTURE_ERR_OK;
 }
 
-static esp_capture_err_t i2s_src_set_fixed_caps(esp_capture_audio_src_if_t *h, const esp_capture_audio_info_t *caps)
+static esp_capture_err_t i2s_capture_set_fixed_caps(esp_capture_audio_src_if_t *h, const esp_capture_audio_info_t *caps)
 {
-    capture_audio_i2s_src_t *ctx = (capture_audio_i2s_src_t *)h;
+    audio_i2s_capture_t *ctx = (audio_i2s_capture_t *)h;
     if (!ctx || !caps) {
         return ESP_CAPTURE_ERR_INVALID_ARG;
     }
@@ -107,9 +90,9 @@ static esp_capture_err_t i2s_src_set_fixed_caps(esp_capture_audio_src_if_t *h, c
     return ESP_CAPTURE_ERR_OK;
 }
 
-static esp_capture_err_t i2s_src_negotiate_caps(esp_capture_audio_src_if_t *h, esp_capture_audio_info_t *wanted, esp_capture_audio_info_t *out)
+static esp_capture_err_t i2s_capture_negotiate_caps(esp_capture_audio_src_if_t *h, esp_capture_audio_info_t *wanted, esp_capture_audio_info_t *out)
 {
-    capture_audio_i2s_src_t *ctx = (capture_audio_i2s_src_t *)h;
+    audio_i2s_capture_t *ctx = (audio_i2s_capture_t *)h;
     if (!ctx || !wanted || !out) {
         return ESP_CAPTURE_ERR_INVALID_ARG;
     }
@@ -126,7 +109,7 @@ static esp_capture_err_t i2s_src_negotiate_caps(esp_capture_audio_src_if_t *h, e
         result.channel = wanted->channel;
     }
 
-    result.bits_per_sample = AUDIO_AAC_BITS;
+    result.bits_per_sample = AUDIO_I2S_BITS_PER_SAMPLE;
     result.format_id = ESP_CAPTURE_FMT_ID_PCM;
 
     if (!caps_supported(&result)) {
@@ -143,16 +126,13 @@ static esp_capture_err_t i2s_src_negotiate_caps(esp_capture_audio_src_if_t *h, e
     }
 
     ctx->caps = result;
-    ctx->cfg.sample_rate_hz = ctx->caps.sample_rate;
-    ctx->cfg.channel_count = ctx->caps.channel;
-    ctx->cfg.bits_per_sample = ctx->caps.bits_per_sample;
     *out = result;
     return ESP_CAPTURE_ERR_OK;
 }
 
-static esp_capture_err_t i2s_src_start(esp_capture_audio_src_if_t *h)
+static esp_capture_err_t i2s_capture_start(esp_capture_audio_src_if_t *h)
 {
-    capture_audio_i2s_src_t *ctx = (capture_audio_i2s_src_t *)h;
+    audio_i2s_capture_t *ctx = (audio_i2s_capture_t *)h;
     if (!ctx) {
         return ESP_CAPTURE_ERR_INVALID_ARG;
     }
@@ -160,29 +140,9 @@ static esp_capture_err_t i2s_src_start(esp_capture_audio_src_if_t *h)
         return ESP_CAPTURE_ERR_OK;
     }
 
-    esp_capture_err_t err = i2s_src_open(h);
+    esp_capture_err_t err = i2s_capture_open(h);
     if (err != ESP_CAPTURE_ERR_OK) {
         return err;
-    }
-
-    const i2s_slot_mode_t slot_mode = (ctx->caps.channel == 1) ? I2S_SLOT_MODE_MONO : I2S_SLOT_MODE_STEREO;
-    i2s_std_config_t std_cfg = {
-        .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(ctx->caps.sample_rate),
-        .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, slot_mode),
-        .gpio_cfg = ctx->cfg.gpio_cfg,
-    };
-    std_cfg.slot_cfg.slot_mask = (slot_mode == I2S_SLOT_MODE_MONO) ? I2S_STD_SLOT_LEFT : I2S_STD_SLOT_BOTH;
-
-    esp_err_t ret = i2s_channel_init_std_mode(ctx->rx, &std_cfg);
-    if (ret != ESP_OK) {
-        ESP_LOGE(AUDIO_TAG, "Standard I2S init failed: %s", esp_err_to_name(ret));
-        return ESP_CAPTURE_ERR_INTERNAL;
-    }
-
-    ret = i2s_channel_enable(ctx->rx);
-    if (ret != ESP_OK) {
-        ESP_LOGE(AUDIO_TAG, "I2S channel enable failed: %s", esp_err_to_name(ret));
-        return ESP_CAPTURE_ERR_INTERNAL;
     }
 
     destroy_alc(ctx);
@@ -210,9 +170,9 @@ static esp_capture_err_t i2s_src_start(esp_capture_audio_src_if_t *h)
     return ESP_CAPTURE_ERR_OK;
 }
 
-static esp_capture_err_t i2s_src_read_frame(esp_capture_audio_src_if_t *h, esp_capture_stream_frame_t *frame)
+static esp_capture_err_t i2s_capture_read_frame(esp_capture_audio_src_if_t *h, esp_capture_stream_frame_t *frame)
 {
-    capture_audio_i2s_src_t *ctx = (capture_audio_i2s_src_t *)h;
+    audio_i2s_capture_t *ctx = (audio_i2s_capture_t *)h;
     if (!ctx || !frame || !frame->data) {
         return ESP_CAPTURE_ERR_INVALID_ARG;
     }
@@ -268,9 +228,9 @@ static esp_capture_err_t i2s_src_read_frame(esp_capture_audio_src_if_t *h, esp_c
     return ESP_CAPTURE_ERR_OK;
 }
 
-static esp_capture_err_t i2s_src_stop(esp_capture_audio_src_if_t *h)
+static esp_capture_err_t i2s_capture_stop(esp_capture_audio_src_if_t *h)
 {
-    capture_audio_i2s_src_t *ctx = (capture_audio_i2s_src_t *)h;
+    audio_i2s_capture_t *ctx = (audio_i2s_capture_t *)h;
     if (!ctx) {
         return ESP_CAPTURE_ERR_INVALID_ARG;
     }
@@ -290,14 +250,14 @@ static esp_capture_err_t i2s_src_stop(esp_capture_audio_src_if_t *h)
     return ESP_CAPTURE_ERR_OK;
 }
 
-static esp_capture_err_t i2s_src_close(esp_capture_audio_src_if_t *h)
+static esp_capture_err_t i2s_capture_close(esp_capture_audio_src_if_t *h)
 {
-    capture_audio_i2s_src_t *ctx = (capture_audio_i2s_src_t *)h;
+    audio_i2s_capture_t *ctx = (audio_i2s_capture_t *)h;
     if (!ctx) {
         return ESP_CAPTURE_ERR_INVALID_ARG;
     }
     if (ctx->started) {
-        i2s_src_stop(h);
+        i2s_capture_stop(h);
     }
     if (ctx->rx) {
         i2s_del_channel(ctx->rx);
@@ -307,30 +267,21 @@ static esp_capture_err_t i2s_src_close(esp_capture_audio_src_if_t *h)
     return ESP_CAPTURE_ERR_OK;
 }
 
-esp_capture_audio_src_if_t *esp_capture_new_audio_i2s_src(const capture_audio_i2s_src_cfg_t *cfg)
+esp_capture_audio_src_if_t *audio_i2s_capture_new(const audio_i2s_capture_cfg_t *cfg)
 {
     // ReSharper disable once CppDFAMemoryLeak
-    capture_audio_i2s_src_t *ctx = calloc(1, sizeof(capture_audio_i2s_src_t));
+    audio_i2s_capture_t *ctx = calloc(1, sizeof(audio_i2s_capture_t));
     if (ctx == NULL) {
         ESP_LOGE(AUDIO_TAG, "Failed to allocate I2S capture context");
         return NULL;
     }
 
-    capture_audio_i2s_src_cfg_t defaults = capture_audio_i2s_src_default_config();
+    audio_i2s_capture_cfg_t defaults = audio_i2s_capture_default_config();
     ctx->cfg = defaults;
     if (cfg) {
-        memcpy(&ctx->cfg, cfg, sizeof(capture_audio_i2s_src_cfg_t));
+        memcpy(&ctx->cfg, cfg, sizeof(audio_i2s_capture_cfg_t));
     }
 
-    if (ctx->cfg.sample_rate_hz == 0) {
-        ctx->cfg.sample_rate_hz = defaults.sample_rate_hz;
-    }
-    if (ctx->cfg.channel_count == 0) {
-        ctx->cfg.channel_count = defaults.channel_count;
-    }
-    if (ctx->cfg.bits_per_sample == 0) {
-        ctx->cfg.bits_per_sample = defaults.bits_per_sample;
-    }
     if (ctx->cfg.read_timeout_ms == 0) {
         ctx->cfg.read_timeout_ms = defaults.read_timeout_ms;
     }
@@ -340,9 +291,9 @@ esp_capture_audio_src_if_t *esp_capture_new_audio_i2s_src(const capture_audio_i2
     }
 
     ctx->caps.format_id = ESP_CAPTURE_FMT_ID_PCM;
-    ctx->caps.sample_rate = ctx->cfg.sample_rate_hz;
-    ctx->caps.channel = ctx->cfg.channel_count;
-    ctx->caps.bits_per_sample = ctx->cfg.bits_per_sample;
+    ctx->caps.sample_rate = AUDIO_I2S_SAMPLE_RATE;
+    ctx->caps.channel = AUDIO_I2S_CHANNELS;
+    ctx->caps.bits_per_sample = AUDIO_I2S_BITS_PER_SAMPLE;
 
     if (!caps_supported(&ctx->caps)) {
         ESP_LOGE(AUDIO_TAG, "Unsupported I2S capture configuration: %u Hz, %u ch",
@@ -351,25 +302,25 @@ esp_capture_audio_src_if_t *esp_capture_new_audio_i2s_src(const capture_audio_i2
         return NULL;
     }
 
-    ctx->base.open = i2s_src_open;
-    ctx->base.get_support_codecs = i2s_src_get_codecs;
-    ctx->base.set_fixed_caps = i2s_src_set_fixed_caps;
-    ctx->base.negotiate_caps = i2s_src_negotiate_caps;
-    ctx->base.start = i2s_src_start;
-    ctx->base.read_frame = i2s_src_read_frame;
-    ctx->base.stop = i2s_src_stop;
-    ctx->base.close = i2s_src_close;
+    ctx->base.open = i2s_capture_open;
+    ctx->base.get_support_codecs = i2s_capture_get_codecs;
+    ctx->base.set_fixed_caps = i2s_capture_set_fixed_caps;
+    ctx->base.negotiate_caps = i2s_capture_negotiate_caps;
+    ctx->base.start = i2s_capture_start;
+    ctx->base.read_frame = i2s_capture_read_frame;
+    ctx->base.stop = i2s_capture_stop;
+    ctx->base.close = i2s_capture_close;
 
     // ReSharper disable once CppDFAMemoryLeak
     return &ctx->base;
 }
 
-void esp_capture_delete_audio_i2s_src(esp_capture_audio_src_if_t *src)
+void audio_i2s_capture_delete(esp_capture_audio_src_if_t *src)
 {
     if (src == NULL) {
         return;
     }
-    capture_audio_i2s_src_t *ctx = (capture_audio_i2s_src_t *)src;
-    i2s_src_close(src);
+    audio_i2s_capture_t *ctx = (audio_i2s_capture_t *)src;
+    i2s_capture_close(src);
     free(ctx);
 }

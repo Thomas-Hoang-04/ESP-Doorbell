@@ -1,6 +1,7 @@
 #ifndef DOORBELL_VIDEO_SRC_H
 #define DOORBELL_VIDEO_SRC_H
 
+#include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_capture.h"
 #include "esp_capture_types.h"
@@ -117,7 +118,7 @@ void start_capture_task(void);
 /**
  * @brief Stop audio and video capture and release resources
  */
-void destroy_av_tasks(void);
+void destroy_capture_tasks(void);
 
 /**
  * @brief Suspend AV capture task
