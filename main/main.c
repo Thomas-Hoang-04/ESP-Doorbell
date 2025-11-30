@@ -8,12 +8,14 @@
 #include "esp_check.h"
 #include "esp_netif.h"
 #include "esp_log.h"
-#include "capture/video_src.h"
+#include "video/video_capture.h"
 
 #include "network/wifi.h"
 #include "sd_handler/sd_handler.h"
 #include "time/time_sync.h"
 #include "websocket/ws_stream.h"
+#include "audio/audio_i2s_common.h"
+#include "audio/audio_i2s_player.h"
 
 #define TAG "MAIN"
 
@@ -45,6 +47,14 @@ void app_main(void)
     time_set_timezone("UTC-7");
     ESP_ERROR_CHECK(time_sync_wait(30));
 
+    ESP_LOGI(TAG, "Initializing I2S channel...");
+    ESP_ERROR_CHECK(audio_i2s_common_init());
+    ESP_LOGI(TAG, "I2S channel initialized");
+
+    ESP_LOGI(TAG, "Initializing Audio Player...");
+    ESP_ERROR_CHECK(audio_i2s_player_init(NULL));
+    ESP_LOGI(TAG, "Audio Player initialized");
+
     int64_t suspend_time_us = esp_timer_get_time() + ((int64_t)60 * 1000000LL);
     ESP_LOGI(TAG, "Initializing AV capture...");
     capture_setup();
@@ -67,5 +77,5 @@ void app_main(void)
     ESP_LOGI(TAG, "Cleaning up WebSocket streaming...");
     ws_stream_destroy();
     
-    destroy_av_tasks();
+    destroy_capture_tasks();
 }

@@ -7,6 +7,7 @@ static void log_nonzero_err(const char* msg, int err_code) {
 }
 
 static void mqtt_event_handler(void* args, esp_event_base_t event_base, int32_t event_id, void* event_data) {
+    // TODO: Implement MQTT event handler
     ESP_LOGD(MQTT_TAG, "Event dispatched from event loop base %s, event_id %lu", event_base, event_id);
     esp_mqtt_event_handle_t event = event_data;
     esp_mqtt_client_handle_t client = event->client;
