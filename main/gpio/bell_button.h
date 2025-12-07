@@ -1,3 +1,8 @@
+/**
+ * @file bell_button.h
+ * @brief Doorbell button GPIO driver with interrupt handling
+ */
+
 #ifndef DOORBELL_BELL_BUTTON_H
 #define DOORBELL_BELL_BUTTON_H
 
@@ -8,13 +13,29 @@
 
 #define BELL_BUTTON_TAG "BELL_BUTTON"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/** @brief GPIO pin number for the bell button */
 extern gpio_num_t bell_button;
 
+/** @brief Event queue for button press events */
 extern QueueHandle_t btn_event_queue;
 
+/**
+ * @brief Button event types
+ */
 typedef enum {
-    BELL_PRESS
+    BELL_PRESS  /**< Button was pressed (momentary) */
 } btn_event_t;
+
+/**
+ * @brief Callback function type for button events
+ * @param event The button event that occurred
+ * @param ctx User context pointer
+ */
+typedef void (*bell_button_callback_t)(btn_event_t event, void *ctx);
 
 /**
  * @brief Initialize the bell button GPIO and related configurations.
@@ -43,5 +64,21 @@ esp_err_t bell_button_deinit(void);
  * and processes them accordingly.
  */
 void create_bell_button_task(void);
+
+/**
+ * @brief Register a callback to receive button events.
+ *
+ * The callback is invoked from the internal bell button task context.
+ *
+ * @param[in] callback Function to call when a button event occurs.
+ * @param[in] ctx User context pointer passed back to the callback.
+ *
+ * @return esp_err_t ESP_OK on success, or ESP_ERR_INVALID_ARG if callback is NULL.
+ */
+esp_err_t bell_button_register_callback(bell_button_callback_t callback, void *ctx);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif //DOORBELL_BELL_BUTTON_H
