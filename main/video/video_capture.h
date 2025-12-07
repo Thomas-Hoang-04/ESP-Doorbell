@@ -1,3 +1,8 @@
+/**
+ * @file video_capture.h
+ * @brief Audio/Video capture and MP4 recording with esp_capture framework
+ */
+
 #ifndef DOORBELL_VIDEO_SRC_H
 #define DOORBELL_VIDEO_SRC_H
 
@@ -13,6 +18,10 @@
 
 #define AV_LOG_TAG "AV_CAPTURE"
 #define AV_VIDEO_TAG "AV_MP4"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #define CAM_PIN_PWDN    GPIO_NUM_NC
 #define CAM_PIN_RESET   GPIO_NUM_NC
@@ -88,9 +97,9 @@ typedef struct {
     esp_capture_handle_t        capture;
     esp_capture_sink_handle_t   video_sink;
     i2c_master_bus_handle_t     sccb_i2c_bus;
-    bool                        capture_initialized;
-    bool                        capture_started;
-    bool                        streaming_enabled;
+    volatile bool capture_initialized;
+    volatile bool capture_started;
+    volatile bool streaming_enabled;
 } av_handles_t;
 
 /**
@@ -133,5 +142,9 @@ esp_capture_err_t suspend_capture_task(void);
  * @return ESP_CAPTURE_ERR_OK on success, error code otherwise
  */
 esp_capture_err_t resume_capture_task(void);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif //DOORBELL_VIDEO_SRC_H

@@ -1,3 +1,8 @@
+/**
+ * @file time_sync.h
+ * @brief SNTP time synchronization driver
+ */
+
 #ifndef DOORBELL_TIME_SYNC_H
 #define DOORBELL_TIME_SYNC_H
 
@@ -8,9 +13,14 @@
 
 #define TIME_TAG "TIME_SYNC"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/** @brief Size of the time string buffer */
 #define TIME_BUFFER_SIZE 32
 
-// Global buffer to hold formatted time string
+/** @brief Global buffer for formatted time strings */
 extern char time_buffer[TIME_BUFFER_SIZE];
 
 /**
@@ -71,5 +81,9 @@ void unix_to_human_local(time_t timestamp, char* buffer, size_t buffer_size);
  * @param buffer_size Size of the buffer
  */
 void unix_to_human_utc(time_t timestamp, char* buffer, size_t buffer_size);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif //DOORBELL_TIME_SYNC_H

@@ -3,6 +3,8 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "freertos/queue.h"
+#include "freertos/task.h"
 #include <stdint.h>
 #include <stdbool.h>
 #include "esp_err.h"
@@ -40,6 +42,8 @@ typedef struct {
     esp_audio_type_t current_type;
     volatile bool playing;
     SemaphoreHandle_t mutex;
+    QueueHandle_t cmd_queue;
+    TaskHandle_t task_handle;
 } audio_i2s_player_t;
 
 /**
@@ -111,6 +115,28 @@ esp_err_t audio_i2s_player_play_buffer(const uint8_t *buffer,
  *       - ESP_ERR_INVALID_ARG if handle is NULL
  */
 esp_err_t audio_i2s_player_stop(void);
+
+/**
+ * @brief Request playback by file index via the audio player task.
+ *
+ * @param[in] file_index Index passed to select_file_to_play().
+ *
+ * @return
+ *      - ESP_OK on success
+ *      - ESP_ERR_INVALID_STATE if the player is not initialized
+ *      - ESP_ERR_TIMEOUT if the command queue is full
+ */
+esp_err_t audio_i2s_player_request_play(int file_index);
+
+/**
+ * @brief Request the current playback stop via the audio player task.
+ *
+ * @return
+ *      - ESP_OK on success
+ *      - ESP_ERR_INVALID_STATE if the player is not initialized
+ *      - ESP_ERR_TIMEOUT if the command queue is full
+ */
+esp_err_t audio_i2s_player_request_stop(void);
 
 /**
  * @brief Deinitialize audio player and free resources

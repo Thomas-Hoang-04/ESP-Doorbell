@@ -158,7 +158,7 @@ void start_capture_task(void) {
         ESP_LOGW(AV_LOG_TAG, "Capture task already running");
         return;
     }
-    
+
     if (xTaskCreate(start_capture, "av_capture_task", 16 * 1024, NULL, 5, &capture_task) != pdPASS) {
         ESP_LOGE(AV_LOG_TAG, "Failed to create capture task");
         capture_task = NULL;

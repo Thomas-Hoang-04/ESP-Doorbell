@@ -17,7 +17,9 @@ esp_err_t audio_i2s_common_init(void)
     }
 
     i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(AUDIO_I2S_PORT, I2S_ROLE_MASTER);
-    
+    chan_cfg.dma_desc_num = 8;
+    chan_cfg.dma_frame_num = 256;
+
     esp_err_t err = i2s_new_channel(&chan_cfg, &s_i2s_ctx.tx, &s_i2s_ctx.rx);
     if (err != ESP_OK) {
         ESP_LOGE(AUDIO_I2S_TAG, "Failed to create I2S channels: %s", esp_err_to_name(err));

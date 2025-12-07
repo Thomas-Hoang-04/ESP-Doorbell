@@ -1,3 +1,8 @@
+/**
+ * @file audio_i2s_capture.h
+ * @brief I2S audio capture driver for esp_capture framework
+ */
+
 #pragma once
 
 #include <stdint.h>
@@ -6,12 +11,19 @@
 #include "esp_capture_audio_src_if.h"
 #include "audio_i2s_common.h"
 
+/** @brief Read timeout for AAC frames in milliseconds */
 #define AUDIO_AAC_READ_TIMEOUT_MS 1000
 
+/** @brief Enable Automatic Level Control */
 #define AUDIO_ALC_ENABLE true
+/** @brief ALC gain in dB */
 #define AUDIO_ALC_GAIN_DB 48
 
 #define AUDIO_TAG "CAP_I2S"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /**
  * @brief Configuration for I2S audio capture
@@ -68,3 +80,6 @@ esp_capture_audio_src_if_t *audio_i2s_capture_new(const audio_i2s_capture_cfg_t 
  */
 void audio_i2s_capture_delete(esp_capture_audio_src_if_t *src);
 
+#ifdef __cplusplus
+}
+#endif

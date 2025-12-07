@@ -4,6 +4,9 @@
 #include <string.h>
 #include <stdio.h>
 #include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/queue.h"
+#include "freertos/semphr.h"
 #include "driver/i2s_common.h"
 #include "esp_log.h"
 #include "esp_audio_simple_dec.h"
@@ -16,6 +19,21 @@
 #define FILE_READ_CHUNK_SIZE 2048
 
 audio_i2s_player_handle_t audio_i2s_player = NULL;
+
+typedef enum {
+    AUDIO_PLAYER_CMD_PLAY_INDEX = 0,
+    AUDIO_PLAYER_CMD_STOP,
+    AUDIO_PLAYER_CMD_EXIT,
+} audio_player_cmd_t;
+
+typedef struct {
+    audio_player_cmd_t type;
+    int index;
+} audio_player_cmd_msg_t;
+
+static void audio_player_task(void *arg);
+static esp_err_t audio_player_play_index(int index);
+static void audio_player_cleanup(audio_i2s_player_t *player);
 
 audio_i2s_player_cfg_t audio_i2s_player_default_config(void)
 {
@@ -42,6 +60,72 @@ static esp_audio_simple_dec_type_t get_simple_dec_type_from_extension(const char
     return ESP_AUDIO_SIMPLE_DEC_TYPE_NONE;
 }
 
+static esp_err_t audio_player_play_index(int index)
+{
+    char *file_path = select_file_to_play(index);
+    ESP_RETURN_ON_FALSE(file_path, ESP_ERR_INVALID_ARG, AUDIO_PLAYER_TAG,
+                        "Invalid file index: %d", index);
+
+    esp_err_t err = audio_i2s_player_play_file(file_path);
+    free(file_path);
+    return err;
+}
+
+static void audio_player_task(void *arg)
+{
+    audio_i2s_player_t *player = (audio_i2s_player_t *)arg;
+    audio_player_cmd_msg_t cmd;
+
+    while (xQueueReceive(player->cmd_queue, &cmd, portMAX_DELAY) == pdTRUE) {
+        switch (cmd.type) {
+            case AUDIO_PLAYER_CMD_PLAY_INDEX: {
+                audio_i2s_player_stop();
+                esp_err_t err = audio_player_play_index(cmd.index);
+                if (err != ESP_OK) {
+                    ESP_LOGE(AUDIO_PLAYER_TAG, "Failed to play index %d: %s",
+                             cmd.index, esp_err_to_name(err));
+                }
+                break;
+            }
+            case AUDIO_PLAYER_CMD_STOP:
+                audio_i2s_player_stop();
+                break;
+            case AUDIO_PLAYER_CMD_EXIT:
+                audio_i2s_player_stop();
+                vTaskDelete(NULL);
+                return;
+            default:
+                break;
+        }
+    }
+
+    vTaskDelete(NULL);
+}
+
+static void audio_player_cleanup(audio_i2s_player_t *player)
+{
+    if (!player) {
+        return;
+    }
+
+    if (player->task_handle) {
+        vTaskDelete(player->task_handle);
+        player->task_handle = NULL;
+    }
+
+    if (player->cmd_queue) {
+        vQueueDelete(player->cmd_queue);
+        player->cmd_queue = NULL;
+    }
+
+    if (player->mutex) {
+        vSemaphoreDelete(player->mutex);
+        player->mutex = NULL;
+    }
+
+    free(player);
+}
+
 esp_err_t audio_i2s_player_init(const audio_i2s_player_cfg_t *cfg)
 {
     audio_i2s_player_t *player = calloc(1, sizeof(audio_i2s_player_t));
@@ -56,28 +140,44 @@ esp_err_t audio_i2s_player_init(const audio_i2s_player_cfg_t *cfg)
     player->mutex = xSemaphoreCreateMutex();
     if (!player->mutex) {
         ESP_LOGE(AUDIO_PLAYER_TAG, "Failed to create mutex");
-        free(player);
+        audio_player_cleanup(player);
         return ESP_FAIL;
     }
 
     player->tx = audio_i2s_common_get_tx_handle();
     if (!player->tx) {
         ESP_LOGE(AUDIO_PLAYER_TAG, "I2S common not initialized. Call audio_i2s_common_init() first");
-        free(player);
+        audio_player_cleanup(player);
         return ESP_FAIL;
     }
 
-    esp_audio_err_t ret = esp_audio_simple_dec_register_default();
+    esp_audio_err_t ret = esp_audio_dec_register_default();
+    ret = esp_audio_simple_dec_register_default();
     if (ret != ESP_AUDIO_ERR_OK && ret != ESP_AUDIO_ERR_ALREADY_EXIST) {
         ESP_LOGE(AUDIO_PLAYER_TAG, "Failed to register simple decoders: %d", ret);
-        free(player);
+        audio_player_cleanup(player);
         return ESP_FAIL;
     }
 
     ret = esp_opus_dec_register();
     if (ret != ESP_AUDIO_ERR_OK && ret != ESP_AUDIO_ERR_ALREADY_EXIST) {
         ESP_LOGE(AUDIO_PLAYER_TAG, "Failed to register Opus decoder: %d", ret);
-        free(player);
+        audio_player_cleanup(player);
+        return ESP_FAIL;
+    }
+
+    player->cmd_queue = xQueueCreate(8, sizeof(audio_player_cmd_msg_t));
+    if (!player->cmd_queue) {
+        ESP_LOGE(AUDIO_PLAYER_TAG, "Failed to create audio player command queue");
+        audio_player_cleanup(player);
+        return ESP_FAIL;
+    }
+
+    BaseType_t task_created = xTaskCreate(audio_player_task, "audio_player_task", 6144,
+                                          player, 5, &player->task_handle);
+    if (task_created != pdPASS) {
+        ESP_LOGE(AUDIO_PLAYER_TAG, "Failed to create audio player task");
+        audio_player_cleanup(player);
         return ESP_FAIL;
     }
 
@@ -428,13 +528,59 @@ esp_err_t audio_i2s_player_stop(void)
     return ESP_OK;
 }
 
+esp_err_t audio_i2s_player_request_play(int file_index)
+{
+    ESP_RETURN_ON_FALSE(audio_i2s_player, ESP_ERR_INVALID_STATE, AUDIO_PLAYER_TAG, "Invalid handle");
+
+    audio_i2s_player_t *player = audio_i2s_player;
+    ESP_RETURN_ON_FALSE(player->cmd_queue, ESP_ERR_INVALID_STATE, AUDIO_PLAYER_TAG, "Command queue not ready");
+
+    audio_player_cmd_msg_t cmd = {
+        .type = AUDIO_PLAYER_CMD_PLAY_INDEX,
+        .index = file_index,
+    };
+
+    audio_i2s_player_stop();
+
+    BaseType_t queued = xQueueSend(player->cmd_queue, &cmd, pdMS_TO_TICKS(10));
+    if (queued != pdTRUE) {
+        ESP_LOGW(AUDIO_PLAYER_TAG, "Audio player command queue full");
+        return ESP_ERR_TIMEOUT;
+    }
+
+    return ESP_OK;
+}
+
+esp_err_t audio_i2s_player_request_stop(void)
+{
+    ESP_RETURN_ON_FALSE(audio_i2s_player, ESP_ERR_INVALID_STATE, AUDIO_PLAYER_TAG, "Invalid handle");
+
+    audio_i2s_player_t *player = audio_i2s_player;
+    ESP_RETURN_ON_FALSE(player->cmd_queue, ESP_ERR_INVALID_STATE, AUDIO_PLAYER_TAG, "Command queue not ready");
+
+    audio_player_cmd_msg_t cmd = {
+        .type = AUDIO_PLAYER_CMD_STOP,
+        .index = -1,
+    };
+
+    audio_i2s_player_stop();
+
+    BaseType_t queued = xQueueSend(player->cmd_queue, &cmd, pdMS_TO_TICKS(10));
+    if (queued != pdTRUE) {
+        ESP_LOGW(AUDIO_PLAYER_TAG, "Audio player command queue full");
+        return ESP_ERR_TIMEOUT;
+    }
+
+    return ESP_OK;
+}
+
 esp_err_t audio_i2s_player_deinit(void)
 {
     ESP_RETURN_ON_FALSE(audio_i2s_player, ESP_ERR_INVALID_ARG, AUDIO_PLAYER_TAG, "Invalid handle");
 
     audio_i2s_player_t *player = audio_i2s_player;
 
-    player->playing = false;
+    audio_i2s_player_stop();
 
     if (player->simple_dec) {
         esp_audio_simple_dec_close(player->simple_dec);
@@ -446,7 +592,8 @@ esp_err_t audio_i2s_player_deinit(void)
         player->opus_dec = NULL;
     }
 
-    free(player);
+    audio_i2s_player = NULL;
+    audio_player_cleanup(player);
 
     return ESP_OK;
 }

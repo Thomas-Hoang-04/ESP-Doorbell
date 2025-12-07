@@ -1,3 +1,8 @@
+/**
+ * @file ws_stream.h
+ * @brief WebSocket streaming module for real-time AV transmission
+ */
+
 #ifndef DOORBELL_WS_STREAM_H
 #define DOORBELL_WS_STREAM_H
 
@@ -6,9 +11,16 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+/** @brief Magic number for WebSocket frame header (0x4156 = "AV") */
 #define WS_STREAM_MAGIC         0x4156
+/** @brief Frame type indicator for video frames */
 #define WS_STREAM_TYPE_VIDEO    0x01
+/** @brief Frame type indicator for audio frames */
 #define WS_STREAM_TYPE_AUDIO    0x02
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /**
  * @brief WebSocket streaming configuration
@@ -61,5 +73,8 @@ bool ws_stream_is_connected(void);
  */
 void ws_stream_destroy(void);
 
-#endif // DOORBELL_WS_STREAM_H
+#ifdef __cplusplus
+}
+#endif
 
+#endif // DOORBELL_WS_STREAM_H
