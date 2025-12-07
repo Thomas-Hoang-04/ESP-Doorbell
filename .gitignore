@@ -8,3 +8,5 @@ cmake-build-debug/
 !README.md
 
 *.md
+
+notes.txt

@@ -105,17 +105,43 @@ menu "Network Configuration"
             string "MQTT Client ID"
             default "esp32_device"
             help
-                MQTT client identifier
+                MQTT client identifier. TODO: Set this to match the device UUID in your backend database.
+
+        menu "Topics"
+            config MQTT_STREAM_CONTROL_TOPIC
+                string "Stream Control Topic"
+                default "doorbell/+/stream/+"
+                help
+                    MQTT topic for receiving stream control commands.
+                    Uses wildcard (+) for device ID and action (start/stop).
+                    Expected payload: {"action":"start_stream"} or {"action":"stop_stream"}
+
+            config MQTT_HEARTBEAT_TOPIC
+                string "Heartbeat Publish Topic"
+                default "doorbell/%s/heartbeat"
+                help
+                    MQTT topic for publishing heartbeat messages.
+                    %s will be replaced with device ID (MQTT_CLIENT_ID).
+        endmenu
     endmenu
 
-    menu "Topic Configuration"
-
-        config TB_TELEMETRY_TOPIC
-            string "Telemetry Topic"
-            default "v1/devices/me/telemetry"
+    menu "Capture Settings"
+        config CAPTURE_TIMEOUT_SEC
+            int "Capture timeout (seconds)"
+            default 60
+            range 10 300
             help
-                Topic for sending telemetry data
+                Automatic capture timeout after button press.
+                Set to 0 for indefinite capture (requires manual stop).
+    endmenu
 
+    menu "Heartbeat Settings"
+        config MQTT_HEARTBEAT_INTERVAL_SEC
+            int "Heartbeat interval (seconds)"
+            default 30
+            range 5 300
+            help
+                Interval in seconds between heartbeat messages sent to the backend.
     endmenu
     
 endmenu
