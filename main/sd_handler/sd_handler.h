@@ -116,6 +116,21 @@ void get_sd_card_info(void);
  */
 void sd_card_self_test(void);
 
+/**
+ * @brief Start the background file cleanup task
+ *
+ * Checks for files in the specified path and deletes them if they are older
+ * than the retention period defined in Kconfig.
+ *
+ * @param[in] path Directory path to monitor (e.g. "/sdcard/video")
+ */
+void start_file_cleanup_task(const char* path);
+
+/**
+ * @brief Stop the background file cleanup task
+ */
+void stop_file_cleanup_task(void);
+
 #ifdef __cplusplus
 }
 #endif
