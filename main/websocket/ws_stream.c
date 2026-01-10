@@ -148,26 +148,24 @@ static esp_err_t send_frame(ws_stream_handle_t *handle, frame_queue_item_t *item
     header[10] = (item->pts >> 8) & 0xFF;
     header[11] = item->pts & 0xFF;
     
-    size_t total_size = sizeof(header) + item->size;
+    int sent = esp_websocket_client_send_bin_partial(handle->client, (const char *)header, sizeof(header),
+                                                      pdMS_TO_TICKS(WS_SEND_TIMEOUT_MS));
+    if (sent < 0) {
+        handle->connected = false;
+        return ESP_FAIL;
+    }
     
-    if (total_size <= CONFIG_WS_BUFFER_SIZE) {
-        uint8_t *buffer = malloc(total_size);
-        if (!buffer) {
-            return ESP_ERR_NO_MEM;
-        }
-        memcpy(buffer, header, sizeof(header));
-        memcpy(buffer + sizeof(header), item->data, item->size);
-        
-        int sent = esp_websocket_client_send_bin(handle->client, (const char *)buffer, total_size,
-                                                  pdMS_TO_TICKS(WS_SEND_TIMEOUT_MS));
-        free(buffer);
-        
-        if (sent < 0) {
-            handle->connected = false;
-            return ESP_FAIL;
-        }
-    } else {
-        return send_frame_fragmented(handle, header, sizeof(header), item->data, item->size);
+    sent = esp_websocket_client_send_cont_msg(handle->client, (const char *)item->data, item->size,
+                                               pdMS_TO_TICKS(WS_SEND_TIMEOUT_MS));
+    if (sent < 0) {
+        handle->connected = false;
+        return ESP_FAIL;
+    }
+    
+    sent = esp_websocket_client_send_fin(handle->client, pdMS_TO_TICKS(WS_SEND_TIMEOUT_MS));
+    if (sent < 0) {
+        handle->connected = false;
+        return ESP_FAIL;
     }
     
     return ESP_OK;

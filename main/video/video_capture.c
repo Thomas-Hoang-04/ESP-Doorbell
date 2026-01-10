@@ -26,6 +26,7 @@
 av_handles_t av_handles = {0};
 
 TaskHandle_t capture_task = NULL;
+static volatile bool should_exit = false;
 
 static int mp4_url_pattern(char *file_path, int len, int slice_idx)
 {
@@ -114,9 +115,10 @@ static void start_capture(void* arg) {
     // ReSharper disable once CppTooWideScope
     esp_capture_stream_frame_t frame = {0};
 
-    if (setup_capture_pipeline() != ESP_OK || 
+    if (setup_capture_pipeline() != ESP_OK ||
         esp_capture_sink_enable(av_handles.video_sink, ESP_CAPTURE_RUN_MODE_ALWAYS) != ESP_CAPTURE_ERR_OK) {
         ESP_LOGE(AV_LOG_TAG, "Failed to setup capture pipeline");
+        capture_task = NULL;
         vTaskDelete(NULL);
         return;
     }
@@ -124,6 +126,7 @@ static void start_capture(void* arg) {
     if (!av_handles.capture_initialized) {
         if (esp_capture_start(av_handles.capture) != ESP_CAPTURE_ERR_OK) {
             ESP_LOGE(AV_LOG_TAG, "Failed to start capture");
+            capture_task = NULL;
             vTaskDelete(NULL);
             return;
         }
@@ -131,26 +134,47 @@ static void start_capture(void* arg) {
     }
 
     av_handles.capture_started = true;
-    // ReSharper disable once CppDFAEndlessLoop
-    while (true) {
+    should_exit = false;
+
+    while (!should_exit) {
         frame.stream_type = ESP_CAPTURE_STREAM_TYPE_AUDIO;
         while (esp_capture_sink_acquire_frame(av_handles.video_sink, &frame, true) == ESP_CAPTURE_ERR_OK) {
             if (av_handles.streaming_enabled) {
                 ws_stream_queue_frame(frame.stream_type, frame.data, frame.size, frame.pts);
             }
             esp_capture_sink_release_frame(av_handles.video_sink, &frame);
+            if (should_exit) break;
         }
-        
+        if (should_exit) break;
+
         frame.stream_type = ESP_CAPTURE_STREAM_TYPE_VIDEO;
         while (esp_capture_sink_acquire_frame(av_handles.video_sink, &frame, true) == ESP_CAPTURE_ERR_OK) {
             if (av_handles.streaming_enabled) {
                 ws_stream_queue_frame(frame.stream_type, frame.data, frame.size, frame.pts);
             }
             esp_capture_sink_release_frame(av_handles.video_sink, &frame);
+            if (should_exit) break;
         }
-        
+        if (should_exit) break;
+
         vTaskDelay(pdMS_TO_TICKS(20));
     }
+
+    ESP_LOGI(AV_LOG_TAG, "Capture task exiting gracefully");
+
+    if (av_handles.capture_initialized) {
+        esp_capture_stop(av_handles.capture);
+        av_handles.capture_initialized = false;
+    }
+
+    if (av_handles.capture) {
+        esp_capture_close(av_handles.capture);
+        av_handles.capture = NULL;
+    }
+
+    av_handles.capture_started = false;
+    capture_task = NULL;
+    vTaskDelete(NULL);
 }
 
 void start_capture_task(void) {
@@ -159,6 +183,7 @@ void start_capture_task(void) {
         return;
     }
 
+    should_exit = false;
     if (xTaskCreate(start_capture, "av_capture_task", 16 * 1024, NULL, 5, &capture_task) != pdPASS) {
         ESP_LOGE(AV_LOG_TAG, "Failed to create capture task");
         capture_task = NULL;
@@ -195,37 +220,29 @@ void destroy_capture_tasks(void) {
     }
 }
 
-esp_capture_err_t suspend_capture_task(void) {
-    ESP_RETURN_ON_FALSE(capture_task && av_handles.capture_started,
-                        ESP_ERR_INVALID_STATE, AV_VIDEO_TAG, "Capture task not running");
-
-    vTaskSuspend(capture_task);
-    av_handles.capture_started = false;
-
-    ESP_RETURN_ON_ERROR(esp_capture_stop(av_handles.capture), AV_VIDEO_TAG, "Failed to stop capture");
-    ESP_RETURN_ON_ERROR(esp_capture_close(av_handles.capture), AV_VIDEO_TAG, "Failed to close capture");
-
-    av_handles.capture = NULL;
-    av_handles.capture_initialized = false;
-    vTaskDelay(pdMS_TO_TICKS(100));
-
-    return ESP_CAPTURE_ERR_OK;
-}
-
-esp_capture_err_t resume_capture_task(void) {
-    ESP_RETURN_ON_FALSE(capture_task, ESP_ERR_INVALID_STATE, AV_VIDEO_TAG, "Capture task not initialized");
-    ESP_RETURN_ON_FALSE(!av_handles.capture_started, ESP_ERR_INVALID_STATE, AV_VIDEO_TAG, "Capture task already running");
-
-    ESP_RETURN_ON_ERROR(setup_capture_pipeline(), AV_VIDEO_TAG, "Failed to setup capture pipeline");
-    ESP_RETURN_ON_ERROR(esp_capture_sink_enable(av_handles.video_sink, ESP_CAPTURE_RUN_MODE_ALWAYS), AV_VIDEO_TAG, "Failed to enable capture sink");
-
-    if (!av_handles.capture_initialized) {
-        ESP_RETURN_ON_ERROR(esp_capture_start(av_handles.capture), AV_VIDEO_TAG, "Failed to start capture");
-        av_handles.capture_initialized = true;
+esp_err_t stop_capture_task(void) {
+    if (!capture_task) {
+        ESP_LOGW(AV_VIDEO_TAG, "Capture task not running");
+        return ESP_OK;
     }
 
-    vTaskResume(capture_task);
-    av_handles.capture_started = true;
+    ESP_LOGI(AV_VIDEO_TAG, "Stopping capture task...");
+    should_exit = true;
 
-    return ESP_CAPTURE_ERR_OK;
+    int timeout_ms = 2000;
+    while (capture_task != NULL && timeout_ms > 0) {
+        vTaskDelay(pdMS_TO_TICKS(50));
+        timeout_ms -= 50;
+    }
+
+    if (capture_task != NULL) {
+        ESP_LOGE(AV_VIDEO_TAG, "Capture task did not exit in time, forcing delete");
+        vTaskDelete(capture_task);
+        capture_task = NULL;
+        av_handles.capture_started = false;
+        return ESP_ERR_TIMEOUT;
+    }
+
+    ESP_LOGI(AV_VIDEO_TAG, "Capture task stopped successfully");
+    return ESP_OK;
 }

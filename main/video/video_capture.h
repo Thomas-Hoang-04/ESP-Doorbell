@@ -130,18 +130,14 @@ void start_capture_task(void);
 void destroy_capture_tasks(void);
 
 /**
- * @brief Suspend AV capture task
+ * @brief Stop AV capture task gracefully
  *
- * @return ESP_CAPTURE_ERR_OK on success, error code otherwise
- */
-esp_capture_err_t suspend_capture_task(void);
-
-/**
- * @brief Resume AV capture task
+ * Signals the task to exit and waits for it to clean up.
+ * After this call, start_capture_task() can be called again.
  *
- * @return ESP_CAPTURE_ERR_OK on success, error code otherwise
+ * @return ESP_OK on success, error code otherwise
  */
-esp_capture_err_t resume_capture_task(void);
+esp_err_t stop_capture_task(void);
 
 #ifdef __cplusplus
 }
