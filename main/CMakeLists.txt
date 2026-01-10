@@ -15,7 +15,7 @@ set(DEPS_AUDIO esp_audio_codec esp_audio_effects)
 set(DEPS_VIDEO esp_video_codec esp_capture esp_psram)
 
 # --- Network & Connectivity ---
-set(DEPS_NETWORK esp_wifi nvs_flash esp_netif lwip)
+set(DEPS_NETWORK esp_wifi nvs_flash esp_netif lwip bt)
 set(DEPS_MQTT mqtt)
 set(DEPS_WEBSOCKET esp_websocket_client)
 

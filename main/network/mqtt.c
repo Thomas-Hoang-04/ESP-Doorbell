@@ -226,10 +226,7 @@ static void handle_stream_control(const char *action) {
     if (strcmp(action, "start_stream") == 0) {
         ESP_LOGI(MQTT_TAG, "Stream control: Starting stream");
         
-        // Start capture if not already running
-        start_capture_task();
-        
-        // Enable WebSocket streaming
+        // Enable WebSocket streaming (Capture is already running)
         av_handles.streaming_enabled = true;
         esp_err_t err = ws_stream_enable(true);
         if (err != ESP_OK) {
@@ -244,9 +241,6 @@ static void handle_stream_control(const char *action) {
         av_handles.streaming_enabled = false;
         ws_stream_enable(false);
         
-        // Stop capture
-        suspend_capture_task();
-        
-        ESP_LOGI(MQTT_TAG, "Streaming stopped");
+        ESP_LOGI(MQTT_TAG, "Streaming pushed to background (recording continues)");
     }
 }

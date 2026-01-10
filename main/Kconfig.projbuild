@@ -1,4 +1,4 @@
-menu "Network Configuration"
+menu "Doorbell Configuration"
 
     menu "WiFi Configuration"
         config WIFI_SSID
@@ -133,6 +133,14 @@ menu "Network Configuration"
             help
                 Automatic capture timeout after button press.
                 Set to 0 for indefinite capture (requires manual stop).
+
+        config RECORDING_RETENTION_HOURS
+            int "Recording retention (hours)"
+            default 24
+            range 1 168
+            help
+                Number of hours to keep recordings on the SD card before deleting.
+                Default is 24 hours. Range is 1 to 168 hours (1 week).
     endmenu
 
     menu "Heartbeat Settings"
@@ -143,5 +151,38 @@ menu "Network Configuration"
             help
                 Interval in seconds between heartbeat messages sent to the backend.
     endmenu
-    
+
+    menu "BLE Provisioning" 
+        config PROV_DEVICE_NAME_PREFIX
+            string "Device Name Prefix"
+            default "DOORBELL_"
+            help
+                Prefix for BLE device name during provisioning.
+                MAC address suffix will be appended.
+
+        config PROV_TIMEOUT_SEC
+            int "Provisioning Timeout (seconds)"
+            default 300
+            range 60 3600
+            help
+                 Timeout for BLE provisioning. Device will restart if not provisioned within this time.
+
+        config PROV_ERASE_ON_FACTORY_RESET
+            bool "Erase WiFi credentials on factory reset"
+            default y
+            help
+                If enabled, WiFi credentials will be erased when factory reset is triggered.
+
+        config PROV_DEVICE_MODEL
+            string "Device Model"
+            default "ESP32-Doorbell"
+            help
+                Device model string sent during provisioning.
+
+        config PROV_FIRMWARE_VERSION
+            string "Firmware Version"
+            default "1.0.0"
+            help
+                Firmware version string sent during provisioning.
+    endmenu
 endmenu

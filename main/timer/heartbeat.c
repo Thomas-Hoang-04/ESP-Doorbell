@@ -24,6 +24,7 @@
 // ---------------------------------------------------------------------------
 static esp_timer_handle_t s_heartbeat_timer = NULL;
 static volatile bool s_timer_running = false;
+static int s_battery_level = 100;
 
 // ---------------------------------------------------------------------------
 // Helper Functions
@@ -31,11 +32,22 @@ static volatile bool s_timer_running = false;
 
 /**
  * @brief Get mock battery level (random 0-100)
- * 
+ *
  * TODO: Replace with actual battery monitoring when hardware is available
  */
 static int get_battery_level(void) {
-    return rand() % 101;  // Random value between 0 and 100
+    if ((rand() % 3) == 0) {
+        if (s_battery_level > 0) {
+            s_battery_level--;
+        }
+    }
+
+    // Simulate charging/reset when critical
+    if (s_battery_level <= 5) {
+        s_battery_level = 100;
+    }
+
+    return s_battery_level;
 }
 
 /**

@@ -20,15 +20,12 @@ static void capture_timeout_task(void *arg)
         // Wait for notification from timer ISR
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
         
-        ESP_LOGI(CAPTURE_TIMER_TAG, "Capture timeout - suspending capture task");
+        // In Always-On mode, we don't need to stop capture.
+        // If streaming is enabled (user watching), we don't want to stop that either.
+        // So this timer is effectively just for logging or other event triggers.
+        ESP_LOGI(CAPTURE_TIMER_TAG, "Capture timer expired (Always-on mode: no action taken)");
         
-        // Don't stop if streaming is enabled (client controls duration)
-        if (!av_handles.streaming_enabled) {
-            esp_capture_err_t err = suspend_capture_task();
-            if (err != ESP_CAPTURE_ERR_OK) {
-                ESP_LOGW(CAPTURE_TIMER_TAG, "Failed to suspend capture: %d", err);
-            }
-        }
+        // if (!av_handles.streaming_enabled && !always_on) { stop... } <-- Old logic
         
         s_timer_running = false;
     }
