@@ -37,22 +37,40 @@ extern "C" {
 
 /**
  * @brief Initialize WiFi in Station mode and connect to configured AP
- * 
+ *
  * Configures WiFi with credentials from Kconfig (WIFI_SSID, WIFI_PASSWORD),
- * starts the connection process, and blocks until connected or max retries 
+ * starts the connection process, and blocks until connected or max retries
  * exceeded. If connection fails after max retries, the device will restart.
  */
 void init_wifi_sta(void);
 
 /**
  * @brief Get current WiFi signal strength (RSSI)
- * 
+ *
  * Returns the Received Signal Strength Indicator in dBm.
  * Typical values range from -30 dBm (excellent) to -90 dBm (weak).
- * 
+ *
  * @return RSSI value in dBm, or 0 if not connected
  */
 int8_t wifi_get_rssi(void);
+
+/**
+ * @brief Connect to WiFi with provided credentials
+ *
+ * @param ssid Network SSID
+ * @param password Network password
+ * @return ESP_OK on success, error code otherwise
+ */
+esp_err_t wifi_connect_with_credentials(const char *ssid, const char *password);
+
+/**
+ * @brief Connect to WiFi using credentials stored in NVS
+ *
+ * Loads SSID and password from NVS and attempts connection.
+ *
+ * @return ESP_OK on success, error code otherwise
+ */
+esp_err_t wifi_connect_from_nvs(void);
 
 #ifdef __cplusplus
 }

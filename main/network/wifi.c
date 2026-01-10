@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include <string.h>
 
 #include "wifi.h"
 #include "esp_event_base.h"
@@ -92,13 +93,79 @@ void init_wifi_sta(void) {
 int8_t wifi_get_rssi(void) {
     wifi_ap_record_t ap_info;
     esp_err_t err = esp_wifi_sta_get_ap_info(&ap_info);
-    
+
     if (err != ESP_OK) {
         ESP_LOGE(WIFI_TAG, "Failed to get AP info: %s", esp_err_to_name(err));
         return 0;
     }
-    
+
     return ap_info.rssi;
 }
 
+static bool wifi_initialized = false;
 
+static void init_wifi_driver(void) {
+    if (wifi_initialized) return;
+
+    wifi_event_group = xEventGroupCreate();
+    esp_netif_create_default_wifi_sta();
+
+    wifi_init_config_t wifi_cfg = WIFI_INIT_CONFIG_DEFAULT();
+    ESP_ERROR_CHECK(esp_wifi_init(&wifi_cfg));
+
+    esp_event_handler_instance_t wifi_inst_any_id, inst_got_ip;
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, NULL, &wifi_inst_any_id));
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_event_handler, NULL, &inst_got_ip));
+
+    wifi_initialized = true;
+}
+
+esp_err_t wifi_connect_with_credentials(const char *ssid, const char *password) {
+    init_wifi_driver();
+
+    wifi_config_t sta_cfg = {
+        .sta = {
+            .scan_method = WIFI_ALL_CHANNEL_SCAN,
+            .threshold.authmode = WIFI_AUTH_WPA2_PSK,
+            .failure_retry_cnt = WIFI_MAXIMUM_RETRY,
+        }
+    };
+
+    strncpy((char *)sta_cfg.sta.ssid, ssid, sizeof(sta_cfg.sta.ssid) - 1);
+    strncpy((char *)sta_cfg.sta.password, password, sizeof(sta_cfg.sta.password) - 1);
+
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &sta_cfg));
+    ESP_ERROR_CHECK(esp_wifi_start());
+
+    ESP_LOGI(WIFI_TAG, "Connecting to AP: %s", ssid);
+
+    EventBits_t wifi_bits = xEventGroupWaitBits(wifi_event_group, WIFI_CONNECTED | WIFI_FAILED, 
+        pdFALSE, pdFALSE, pdMS_TO_TICKS(30000));
+
+    if (wifi_bits & WIFI_CONNECTED) {
+        ESP_LOGI(WIFI_TAG, "Connected to AP: %s", ssid);
+        return ESP_OK;
+    } else if (wifi_bits & WIFI_FAILED) {
+        ESP_LOGE(WIFI_TAG, "Failed to connect to AP: %s", ssid);
+        return ESP_FAIL;
+    }
+
+    ESP_LOGE(WIFI_TAG, "WiFi connection timeout");
+    return ESP_ERR_TIMEOUT;
+}
+
+esp_err_t wifi_connect_from_nvs(void) {
+    char ssid[33] = {0};
+    char password[65] = {0};
+
+    extern esp_err_t ble_prov_nvs_load_wifi(char *ssid, size_t ssid_len, char *password, size_t pass_len);
+
+    esp_err_t err = ble_prov_nvs_load_wifi(ssid, sizeof(ssid), password, sizeof(password));
+    if (err != ESP_OK) {
+        ESP_LOGE(WIFI_TAG, "Failed to load WiFi credentials from NVS");
+        return err;
+    }
+
+    return wifi_connect_with_credentials(ssid, password);
+}
