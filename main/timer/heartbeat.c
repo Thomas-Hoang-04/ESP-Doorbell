@@ -9,7 +9,6 @@
 #include "heartbeat.h"
 #include "esp_timer.h"
 #include "esp_log.h"
-#include "esp_system.h"
 #include <cJSON.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -36,7 +35,7 @@ static int s_battery_level = 100;
  * TODO: Replace with actual battery monitoring when hardware is available
  */
 static int get_battery_level(void) {
-    if ((rand() % 3) == 0) {
+    if (random() % 3 == 0) {
         if (s_battery_level > 0) {
             s_battery_level--;
         }
@@ -76,12 +75,12 @@ static char* build_heartbeat_json(void) {
     cJSON_AddStringToObject(root, "device_id", MQTT_CLIENT_ID);
     
     // Timestamp (milliseconds since epoch, or just uptime-based for now)
-    cJSON_AddNumberToObject(root, "timestamp", (int64_t)(esp_timer_get_time() / 1000));
+    cJSON_AddNumberToObject(root, "timestamp", (double)esp_timer_get_time() / 1000);
     
     // Device metrics
     cJSON_AddNumberToObject(root, "battery_level", get_battery_level());
     cJSON_AddNumberToObject(root, "signal_strength", wifi_get_rssi());
-    cJSON_AddNumberToObject(root, "uptime", (int64_t)get_uptime_seconds());
+    cJSON_AddNumberToObject(root, "uptime", (double)get_uptime_seconds());
     
     // Firmware version
     cJSON_AddStringToObject(root, "fw_ver", FIRMWARE_VERSION);

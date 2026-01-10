@@ -9,7 +9,6 @@
 #include "esp_wifi_default.h"
 #include "esp_wifi_types_generic.h"
 #include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
 #include "freertos/event_groups.h"
 #include "esp_event.h"
 #include "esp_log.h"
@@ -30,7 +29,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
             ESP_LOGI(WIFI_TAG, "WiFi connection failed, retry %d of %d", retry_cnt, WIFI_MAXIMUM_RETRY);
         } else xEventGroupSetBits(wifi_event_group, WIFI_FAILED);
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
-        ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
+        ip_event_got_ip_t *event = event_data;
         char ip_buf[IP4ADDR_STRLEN_MAX] = {0};
         ESP_LOGI(WIFI_TAG, "WiFi connected, IP: %s", esp_ip4addr_ntoa(&event->ip_info.ip, ip_buf, IP4ADDR_STRLEN_MAX));
         xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED);
@@ -131,6 +130,7 @@ esp_err_t wifi_connect_with_credentials(const char *ssid, const char *password) 
         }
     };
 
+    // ReSharper disable CppRedundantCastExpression
     strncpy((char *)sta_cfg.sta.ssid, ssid, sizeof(sta_cfg.sta.ssid) - 1);
     strncpy((char *)sta_cfg.sta.password, password, sizeof(sta_cfg.sta.password) - 1);
 
@@ -146,7 +146,8 @@ esp_err_t wifi_connect_with_credentials(const char *ssid, const char *password) 
     if (wifi_bits & WIFI_CONNECTED) {
         ESP_LOGI(WIFI_TAG, "Connected to AP: %s", ssid);
         return ESP_OK;
-    } else if (wifi_bits & WIFI_FAILED) {
+    }
+    if (wifi_bits & WIFI_FAILED) {
         ESP_LOGE(WIFI_TAG, "Failed to connect to AP: %s", ssid);
         return ESP_FAIL;
     }
@@ -155,11 +156,11 @@ esp_err_t wifi_connect_with_credentials(const char *ssid, const char *password) 
     return ESP_ERR_TIMEOUT;
 }
 
+extern esp_err_t ble_prov_nvs_load_wifi(char *ssid, size_t ssid_len, char *password, size_t pass_len);
+
 esp_err_t wifi_connect_from_nvs(void) {
     char ssid[33] = {0};
     char password[65] = {0};
-
-    extern esp_err_t ble_prov_nvs_load_wifi(char *ssid, size_t ssid_len, char *password, size_t pass_len);
 
     esp_err_t err = ble_prov_nvs_load_wifi(ssid, sizeof(ssid), password, sizeof(password));
     if (err != ESP_OK) {

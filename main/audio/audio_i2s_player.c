@@ -53,10 +53,11 @@ static esp_audio_simple_dec_type_t get_simple_dec_type_from_extension(const char
     
     if (strcasecmp(ext, "aac") == 0) {
         return ESP_AUDIO_SIMPLE_DEC_TYPE_AAC;
-    } else if (strcasecmp(ext, "m4a") == 0 || strcasecmp(ext, "mp4") == 0) {
+    }
+    if (strcasecmp(ext, "m4a") == 0 || strcasecmp(ext, "mp4") == 0) {
         return ESP_AUDIO_SIMPLE_DEC_TYPE_M4A;
     }
-    
+
     return ESP_AUDIO_SIMPLE_DEC_TYPE_NONE;
 }
 
@@ -73,7 +74,7 @@ static esp_err_t audio_player_play_index(int index)
 
 static void audio_player_task(void *arg)
 {
-    audio_i2s_player_t *player = (audio_i2s_player_t *)arg;
+    audio_i2s_player_t *player = arg;
     audio_player_cmd_msg_t cmd;
 
     while (xQueueReceive(player->cmd_queue, &cmd, portMAX_DELAY) == pdTRUE) {
@@ -183,7 +184,7 @@ esp_err_t audio_i2s_player_init(const audio_i2s_player_cfg_t *cfg)
 
     audio_i2s_player = player;
     
-    return ESP_OK;
+    return ret == ESP_AUDIO_ERR_OK ? ESP_OK : ESP_FAIL;
 }
 
 esp_err_t audio_i2s_player_play_file(const char *file_path)

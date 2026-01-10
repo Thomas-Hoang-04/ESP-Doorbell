@@ -47,6 +47,13 @@ esp_err_t ble_prov_gatt_init(void);
 void ble_prov_gatt_set_status(uint8_t status);
 
 /**
+ * @brief Get the current provisioning status value
+ *
+ * @return Current status (see ble_prov_status_t)
+ */
+uint8_t ble_prov_gatt_get_status(void);
+
+/**
  * @brief Send status notification to connected client
  *
  * @param conn_handle BLE connection handle

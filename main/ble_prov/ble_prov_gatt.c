@@ -161,7 +161,8 @@ static int command_chr_access(uint16_t conn_handle, uint16_t attr_handle,
                 prov_status = BLE_PROV_STATUS_FAILED;
             }
             return 0;
-        } else if (cmd == 0x02) {
+        }
+        if (cmd == 0x02) {
             ESP_LOGI(TAG, "Reset credentials command received");
             ble_prov_nvs_erase();
             return 0;
@@ -276,12 +277,10 @@ void gatt_svr_subscribe_cb(struct ble_gap_event *event) {
 }
 
 esp_err_t ble_prov_gatt_init(void) {
-    int rc;
-
     ble_svc_gap_init();
     ble_svc_gatt_init();
 
-    rc = ble_gatts_count_cfg(gatt_svr_svcs);
+    int rc = ble_gatts_count_cfg(gatt_svr_svcs);
     if (rc != 0) {
         ESP_LOGE(TAG, "Failed to count GATT services: %d", rc);
         return ESP_FAIL;
@@ -299,6 +298,10 @@ esp_err_t ble_prov_gatt_init(void) {
 
 void ble_prov_gatt_set_status(uint8_t status) {
     prov_status = status;
+}
+
+uint8_t ble_prov_gatt_get_status(void) {
+    return prov_status;
 }
 
 void ble_prov_gatt_notify_status(uint16_t conn_handle) {

@@ -30,6 +30,7 @@ static void bell_button_task(void* arg)
     TickType_t last_press_tick = 0;
     btn_event_t event;
 
+    // ReSharper disable once CppDFAEndlessLoop
     while (1) {
         if (xQueueReceive(btn_event_queue, &event, portMAX_DELAY)) {
             if (event != BELL_PRESS) {
@@ -37,7 +38,7 @@ static void bell_button_task(void* arg)
             }
 
             TickType_t now = xTaskGetTickCount();
-            if ((now - last_press_tick) < debounce_ticks) {
+            if (now - last_press_tick < debounce_ticks) {
                 continue;
             }
             last_press_tick = now;

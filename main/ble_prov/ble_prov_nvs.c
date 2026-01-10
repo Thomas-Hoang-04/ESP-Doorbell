@@ -1,5 +1,4 @@
 #include "ble_prov_nvs.h"
-#include "nvs_flash.h"
 #include "nvs.h"
 #include "esp_log.h"
 #include <string.h>
@@ -8,9 +7,8 @@ static const char *TAG = "ble_prov_nvs";
 
 esp_err_t ble_prov_nvs_save_wifi(const char *ssid, const char *password) {
     nvs_handle_t handle;
-    esp_err_t err;
 
-    err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle);
+    esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to open NVS: %s", esp_err_to_name(err));
         return err;
@@ -46,9 +44,8 @@ esp_err_t ble_prov_nvs_save_wifi(const char *ssid, const char *password) {
 
 esp_err_t ble_prov_nvs_load_wifi(char *ssid, size_t ssid_len, char *password, size_t pass_len) {
     nvs_handle_t handle;
-    esp_err_t err;
 
-    err = nvs_open(NVS_NAMESPACE, NVS_READONLY, &handle);
+    esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READONLY, &handle);
     if (err != ESP_OK) {
         return err;
     }
@@ -67,9 +64,8 @@ esp_err_t ble_prov_nvs_load_wifi(char *ssid, size_t ssid_len, char *password, si
 
 esp_err_t ble_prov_nvs_save_device(const char *device_id, const uint8_t *device_key, size_t key_len) {
     nvs_handle_t handle;
-    esp_err_t err;
 
-    err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle);
+    esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to open NVS: %s", esp_err_to_name(err));
         return err;
@@ -98,9 +94,8 @@ esp_err_t ble_prov_nvs_save_device(const char *device_id, const uint8_t *device_
 
 esp_err_t ble_prov_nvs_load_device_key(uint8_t *device_key, size_t key_len) {
     nvs_handle_t handle;
-    esp_err_t err;
 
-    err = nvs_open(NVS_NAMESPACE, NVS_READONLY, &handle);
+    esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READONLY, &handle);
     if (err != ESP_OK) {
         return err;
     }
@@ -113,9 +108,8 @@ esp_err_t ble_prov_nvs_load_device_key(uint8_t *device_key, size_t key_len) {
 
 esp_err_t ble_prov_nvs_erase(void) {
     nvs_handle_t handle;
-    esp_err_t err;
 
-    err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle);
+    esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle);
     if (err != ESP_OK) {
         return err;
     }
@@ -132,10 +126,9 @@ esp_err_t ble_prov_nvs_erase(void) {
 
 bool ble_prov_nvs_is_provisioned(void) {
     nvs_handle_t handle;
-    esp_err_t err;
     uint8_t provisioned = 0;
 
-    err = nvs_open(NVS_NAMESPACE, NVS_READONLY, &handle);
+    esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READONLY, &handle);
     if (err != ESP_OK) {
         return false;
     }
@@ -143,5 +136,5 @@ bool ble_prov_nvs_is_provisioned(void) {
     err = nvs_get_u8(handle, NVS_KEY_PROVISIONED, &provisioned);
     nvs_close(handle);
 
-    return (err == ESP_OK && provisioned == 1);
+    return err == ESP_OK && provisioned == 1;
 }

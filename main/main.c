@@ -2,7 +2,6 @@
 #include "freertos/task.h"
 
 #include "esp_err.h"
-#include "esp_timer.h"
 #include "esp_interface.h"
 #include "nvs_flash.h"
 #include "esp_check.h"

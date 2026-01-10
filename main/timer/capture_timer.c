@@ -16,6 +16,7 @@ static volatile bool s_timer_running = false;
 // Task to handle capture timeout (deferred from ISR context)
 static void capture_timeout_task(void *arg)
 {
+    // ReSharper disable once CppDFAEndlessLoop
     while (1) {
         // Wait for notification from timer ISR
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);

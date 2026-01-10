@@ -2,8 +2,8 @@
  * @file ble_prov.h
  * @brief BLE Provisioning public API for ESP32 doorbell
  *
- * This module provides BLE-based WiFi provisioning using NimBLE stack.
- * It allows a mobile app to configure WiFi credentials and device identity
+ * This module provides BLE-based Wi-Fi provisioning using NimBLE stack.
+ * It allows a mobile app to configure Wi-Fi credentials and device identity
  * via a custom GATT service with secure pairing.
  */
 
@@ -12,7 +12,6 @@
 
 #include "esp_err.h"
 #include <stdbool.h>
-#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -23,14 +22,14 @@ extern "C" {
  */
 typedef enum {
     BLE_PROV_STATUS_IDLE = 0,       /**< Waiting for credentials */
-    BLE_PROV_STATUS_CONNECTING,     /**< Connecting to WiFi */
-    BLE_PROV_STATUS_CONNECTED,      /**< WiFi connected successfully */
-    BLE_PROV_STATUS_FAILED,         /**< WiFi connection failed */
+    BLE_PROV_STATUS_CONNECTING,     /**< Connecting to Wi-Fi */
+    BLE_PROV_STATUS_CONNECTED,      /**< Wi-Fi connected successfully */
+    BLE_PROV_STATUS_FAILED,         /**< Wi-Fi connection failed */
     BLE_PROV_STATUS_TIMEOUT,        /**< Provisioning timeout */
 } ble_prov_status_t;
 
 /**
- * @brief Callback invoked when WiFi connection is established during provisioning
+ * @brief Callback invoked when Wi-Fi connection is established during provisioning
  */
 typedef void (*ble_prov_wifi_connected_cb_t)(void);
 
@@ -40,7 +39,7 @@ typedef void (*ble_prov_wifi_connected_cb_t)(void);
  * Initializes NimBLE stack, configures GATT service, and sets up security.
  * Must be called before ble_prov_start().
  *
- * @param on_connected Callback invoked when WiFi connects successfully
+ * @param on_connected Callback invoked when Wi-Fi connects successfully
  * @return ESP_OK on success
  */
 esp_err_t ble_prov_init(ble_prov_wifi_connected_cb_t on_connected);
@@ -59,7 +58,7 @@ esp_err_t ble_prov_start(void);
  * @brief Stop BLE provisioning and free resources
  *
  * Stops NimBLE stack to free approximately 60KB of RAM.
- * Should be called after successful WiFi connection.
+ * Should be called after successful Wi-Fi connection.
  *
  * @return ESP_OK on success
  */
@@ -68,7 +67,7 @@ esp_err_t ble_prov_stop(void);
 /**
  * @brief Check if device has been provisioned
  *
- * @return true if WiFi credentials exist in NVS
+ * @return true if Wi-Fi credentials exist in NVS
  */
 bool ble_prov_is_provisioned(void);
 

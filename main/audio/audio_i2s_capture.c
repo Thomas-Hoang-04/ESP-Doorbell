@@ -19,7 +19,7 @@
 
 static size_t bytes_per_sample(const esp_capture_audio_info_t *info)
 {
-    return (info->bits_per_sample / 8) * info->channel;
+    return info->bits_per_sample / 8 * info->channel;
 }
 
 static void destroy_alc(audio_i2s_capture_t *ctx)
@@ -32,10 +32,10 @@ static void destroy_alc(audio_i2s_capture_t *ctx)
 
 static bool caps_supported(const esp_capture_audio_info_t *caps)
 {
-    const bool format_ok = (caps->format_id == ESP_CAPTURE_FMT_ID_PCM);
-    const bool bits_ok = (caps->bits_per_sample == 16);
-    const bool channel_ok = (caps->channel == 1 || caps->channel == 2);
-    const bool rate_ok = (caps->sample_rate >= 8000 && caps->sample_rate <= 48000);
+    const bool format_ok = caps->format_id == ESP_CAPTURE_FMT_ID_PCM;
+    const bool bits_ok = caps->bits_per_sample == 16;
+    const bool channel_ok = caps->channel == 1 || caps->channel == 2;
+    const bool rate_ok = caps->sample_rate >= 8000 && caps->sample_rate <= 48000;
     return format_ok && bits_ok && channel_ok && rate_ok;
 }
 
@@ -181,16 +181,16 @@ static esp_capture_err_t i2s_capture_read_frame(esp_capture_audio_src_if_t *h, e
     }
     if (frame->size == 0) {
         frame->stream_type = ESP_CAPTURE_STREAM_TYPE_AUDIO;
-        frame->pts = (uint32_t)((ctx->samples * 1000ULL) / ctx->caps.sample_rate);
+        frame->pts = (uint32_t)(ctx->samples * 1000ULL / ctx->caps.sample_rate);
         return ESP_CAPTURE_ERR_OK;
     }
-    if ((frame->size % bytes_per_sample(&ctx->caps)) != 0) {
+    if (frame->size % bytes_per_sample(&ctx->caps) != 0) {
         return ESP_CAPTURE_ERR_INVALID_ARG;
     }
 
     size_t remaining = frame->size;
     uint8_t *cursor = frame->data;
-    const TickType_t timeout_ticks = (ctx->cfg.read_timeout_ms == 0)
+    const TickType_t timeout_ticks = ctx->cfg.read_timeout_ms == 0
                                          ? portMAX_DELAY
                                          : pdMS_TO_TICKS(ctx->cfg.read_timeout_ms);
 
@@ -212,8 +212,8 @@ static esp_capture_err_t i2s_capture_read_frame(esp_capture_audio_src_if_t *h, e
 
     if (ctx->alc) {
         esp_ae_err_t alc_ret = esp_ae_alc_process(ctx->alc, samples_read,
-                                                  (esp_ae_sample_t)frame->data,
-                                                  (esp_ae_sample_t)frame->data);
+                                                  frame->data,
+                                                  frame->data);
         if (alc_ret != ESP_AE_ERR_OK) {
             ESP_LOGW(AUDIO_TAG, "ALC process error (%d)", alc_ret);
         }
@@ -223,7 +223,7 @@ static esp_capture_err_t i2s_capture_read_frame(esp_capture_audio_src_if_t *h, e
     ctx->samples += samples_read;
 
     frame->stream_type = ESP_CAPTURE_STREAM_TYPE_AUDIO;
-    frame->pts = (uint32_t)((pts_samples * 1000ULL) / ctx->caps.sample_rate);
+    frame->pts = (uint32_t)(pts_samples * 1000ULL / ctx->caps.sample_rate);
 
     return ESP_CAPTURE_ERR_OK;
 }

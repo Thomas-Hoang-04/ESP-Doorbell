@@ -48,8 +48,8 @@ static ws_stream_handle_t *g_ws_handle = NULL;
 
 static void websocket_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data)
 {
-    esp_websocket_event_data_t *data = (esp_websocket_event_data_t *)event_data;
-    ws_stream_handle_t *handle = (ws_stream_handle_t *)handler_args;
+    esp_websocket_event_data_t *data = event_data;
+    ws_stream_handle_t *handle = handler_args;
     
     switch (event_id) {
     case WEBSOCKET_EVENT_CONNECTED:
@@ -68,94 +68,36 @@ static void websocket_event_handler(void *handler_args, esp_event_base_t base, i
         handle->connected = false;
         break;
         
-    case WEBSOCKET_EVENT_DATA:
-        break;
-        
     default:
         break;
     }
 }
 
-static esp_err_t send_frame_fragmented(ws_stream_handle_t *handle, const uint8_t *header, size_t header_size,
-                                        const uint8_t *data, size_t data_size)
-{
-    const size_t chunk_size = CONFIG_WS_BUFFER_SIZE - 256;
-    size_t total_sent = 0;
-    size_t remaining = header_size + data_size;
-    bool first_chunk = true;
-    
-    while (remaining > 0 && handle->connected) {
-        size_t to_send = (remaining > chunk_size) ? chunk_size : remaining;
-        int sent;
-        
-        if (first_chunk) {
-            if (to_send <= header_size) {
-                sent = esp_websocket_client_send_bin_partial(handle->client, (const char *)header, to_send,
-                                                              pdMS_TO_TICKS(WS_SEND_TIMEOUT_MS));
-                total_sent += (sent > 0) ? sent : 0;
-            } else {
-                sent = esp_websocket_client_send_bin_partial(handle->client, (const char *)header, header_size,
-                                                              pdMS_TO_TICKS(WS_SEND_TIMEOUT_MS));
-                if (sent > 0) {
-                    total_sent += sent;
-                    size_t data_chunk = to_send - header_size;
-                    sent = esp_websocket_client_send_cont_msg(handle->client, (const char *)data, data_chunk,
-                                                               pdMS_TO_TICKS(WS_SEND_TIMEOUT_MS));
-                    total_sent += (sent > 0) ? sent : 0;
-                }
-            }
-            first_chunk = false;
-        } else {
-            size_t offset = total_sent - header_size;
-            sent = esp_websocket_client_send_cont_msg(handle->client, (const char *)(data + offset), to_send,
-                                                       pdMS_TO_TICKS(WS_SEND_TIMEOUT_MS));
-            total_sent += (sent > 0) ? sent : 0;
-        }
-        
-        if (sent < 0) {
-            ESP_LOGE(TAG, "Send error");
-            handle->connected = false;
-            return ESP_FAIL;
-        }
-        
-        remaining -= to_send;
-    }
-    
-    if (remaining == 0) {
-        int sent = esp_websocket_client_send_fin(handle->client, pdMS_TO_TICKS(WS_SEND_TIMEOUT_MS));
-        if (sent < 0) {
-            handle->connected = false;
-            return ESP_FAIL;
-        }
-    }
-    
-    return ESP_OK;
-}
-
 static esp_err_t send_frame(ws_stream_handle_t *handle, frame_queue_item_t *item)
 {
     uint8_t header[12];
-    header[0] = (WS_STREAM_MAGIC >> 8) & 0xFF;
+    header[0] = WS_STREAM_MAGIC >> 8 & 0xFF;
     header[1] = WS_STREAM_MAGIC & 0xFF;
     header[2] = item->type;
     header[3] = 0;
-    header[4] = (item->seq_num >> 24) & 0xFF;
-    header[5] = (item->seq_num >> 16) & 0xFF;
-    header[6] = (item->seq_num >> 8) & 0xFF;
+    header[4] = item->seq_num >> 24 & 0xFF;
+    header[5] = item->seq_num >> 16 & 0xFF;
+    header[6] = item->seq_num >> 8 & 0xFF;
     header[7] = item->seq_num & 0xFF;
-    header[8] = (item->pts >> 24) & 0xFF;
-    header[9] = (item->pts >> 16) & 0xFF;
-    header[10] = (item->pts >> 8) & 0xFF;
+    header[8] = item->pts >> 24 & 0xFF;
+    header[9] = item->pts >> 16 & 0xFF;
+    header[10] = item->pts >> 8 & 0xFF;
     header[11] = item->pts & 0xFF;
     
+    // ReSharper disable once CppRedundantCastExpression
     int sent = esp_websocket_client_send_bin_partial(handle->client, (const char *)header, sizeof(header),
-                                                      pdMS_TO_TICKS(WS_SEND_TIMEOUT_MS));
+                                                     pdMS_TO_TICKS(WS_SEND_TIMEOUT_MS));
     if (sent < 0) {
         handle->connected = false;
         return ESP_FAIL;
     }
     
-    sent = esp_websocket_client_send_cont_msg(handle->client, (const char *)item->data, item->size,
+    sent = esp_websocket_client_send_cont_msg(handle->client, (const char *)item->data, (int)item->size,
                                                pdMS_TO_TICKS(WS_SEND_TIMEOUT_MS));
     if (sent < 0) {
         handle->connected = false;
@@ -173,7 +115,7 @@ static esp_err_t send_frame(ws_stream_handle_t *handle, frame_queue_item_t *item
 
 static void free_frame_item(frame_queue_item_t *item)
 {
-    if (item && item->data) {
+    if (item->data) {
         free(item->data);
         item->data = NULL;
     }
@@ -181,7 +123,7 @@ static void free_frame_item(frame_queue_item_t *item)
 
 static void ws_send_task(void *arg)
 {
-    ws_stream_handle_t *handle = (ws_stream_handle_t *)arg;
+    ws_stream_handle_t *handle = arg;
     frame_queue_item_t item;
     TickType_t last_reconnect = 0;
     
@@ -214,14 +156,14 @@ static void ws_send_task(void *arg)
         
         if (!handle->connected) {
             TickType_t now = xTaskGetTickCount();
-            if ((now - last_reconnect) >= pdMS_TO_TICKS(handle->reconnect_delay_ms)) {
+            if (now - last_reconnect >= pdMS_TO_TICKS(handle->reconnect_delay_ms)) {
                 ESP_LOGI(TAG, "Attempting reconnect...");
                 esp_err_t ret = esp_websocket_client_start(handle->client);
                 if (ret == ESP_OK) {
                     ESP_LOGI(TAG, "Reconnect initiated");
                 } else {
                     ESP_LOGE(TAG, "Reconnect failed: %s", esp_err_to_name(ret));
-                    handle->reconnect_delay_ms = (handle->reconnect_delay_ms * 2 > WS_RECONNECT_MAX_MS) ?
+                    handle->reconnect_delay_ms = handle->reconnect_delay_ms * 2 > WS_RECONNECT_MAX_MS ?
                                                   WS_RECONNECT_MAX_MS : handle->reconnect_delay_ms * 2;
                 }
                 last_reconnect = now;
@@ -279,7 +221,7 @@ esp_err_t ws_stream_init(const ws_stream_config_t *config)
         .task_stack = WS_TASK_STACK_SIZE,
         .buffer_size = CONFIG_WS_BUFFER_SIZE,
         .network_timeout_ms = 10000,
-        .reconnect_timeout_ms = g_ws_handle->config.reconnect_timeout_ms,
+        .reconnect_timeout_ms = (int)g_ws_handle->config.reconnect_timeout_ms,
         .disable_auto_reconnect = true,
     };
     
@@ -370,6 +312,7 @@ esp_err_t ws_stream_queue_frame(esp_capture_stream_type_t type, const uint8_t *d
     item.seq_num = (*seq_num)++;
     item.pts = pts;
     item.size = size;
+    // ReSharper disable CppDFAMemoryLeak
     item.data = malloc(size);
     
     if (!item.data) {
@@ -396,6 +339,7 @@ esp_err_t ws_stream_queue_frame(esp_capture_stream_type_t type, const uint8_t *d
 
 bool ws_stream_is_connected(void)
 {
+    // ReSharper disable once CppDFANullDereference
     return g_ws_handle && g_ws_handle->connected;
 }
 

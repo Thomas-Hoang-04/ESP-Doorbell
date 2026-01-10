@@ -3,9 +3,6 @@
 #include "ble_prov_nvs.h"
 
 #include "esp_log.h"
-#include "esp_mac.h"
-#include "esp_random.h"
-#include "nvs_flash.h"
 #include "sdkconfig.h"
 
 #include "nimble/nimble_port.h"
@@ -14,7 +11,6 @@
 #include "host/ble_hs_adv.h"
 #include "host/util/util.h"
 #include "services/gap/ble_svc_gap.h"
-#include "store/config/ble_store_config.h"
 
 #include <string.h>
 #include <inttypes.h>
@@ -24,7 +20,6 @@ static const char *TAG = "ble_prov";
 static ble_prov_wifi_connected_cb_t wifi_connected_cb = NULL;
 static uint8_t own_addr_type;
 static uint8_t addr_val[6] = {0};
-static ble_prov_status_t current_status = BLE_PROV_STATUS_IDLE;
 static uint16_t current_conn_handle = BLE_HS_CONN_HANDLE_NONE;
 
 extern void gatt_svr_register_cb(struct ble_gatt_register_ctxt *ctxt, void *arg);
@@ -46,10 +41,9 @@ static void on_stack_reset(int reason) {
 }
 
 static void on_stack_sync(void) {
-    int rc;
     char addr_str[18] = {0};
 
-    rc = ble_hs_util_ensure_addr(0);
+    int rc = ble_hs_util_ensure_addr(0);
     if (rc != 0) {
         ESP_LOGE(TAG, "No available BT address");
         return;
@@ -139,7 +133,8 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg) {
     struct ble_gap_conn_desc desc;
     int rc;
 
-    switch (event->type) {
+    switch (event->type)
+    {
     case BLE_GAP_EVENT_CONNECT:
         ESP_LOGI(TAG, "Connection %s; status=%d",
                  event->connect.status == 0 ? "established" : "failed",
@@ -149,9 +144,11 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg) {
             rc = ble_gap_conn_find(event->connect.conn_handle, &desc);
             if (rc == 0) {
                 current_conn_handle = event->connect.conn_handle;
+                ble_prov_gatt_set_status(BLE_PROV_STATUS_CONNECTING);
                 ESP_LOGI(TAG, "Connected, handle=%d", current_conn_handle);
             }
         } else {
+            ble_prov_gatt_set_status(BLE_PROV_STATUS_FAILED);
             start_advertising();
         }
         break;
@@ -159,6 +156,7 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg) {
     case BLE_GAP_EVENT_DISCONNECT:
         ESP_LOGI(TAG, "Disconnected; reason=%d", event->disconnect.reason);
         current_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+        ble_prov_gatt_set_status(BLE_PROV_STATUS_IDLE);
         ble_prov_gatt_reset_state();
         start_advertising();
         break;
@@ -199,7 +197,7 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg) {
             ESP_LOGI(TAG, "Numeric comparison: auto-accepting (user confirms on phone)");
             rc = ble_sm_inject_io(event->passkey.conn_handle, &pkey);
             if (rc != 0) {
-                ESP_LOGE(TAG, "Failed to accept numcmp: %d", rc);
+                ESP_LOGE(TAG, "Failed to accept Numeric Comparison: %d", rc);
             }
         }
         break;
@@ -212,6 +210,9 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg) {
         ESP_LOGI(TAG, "Repeat pairing");
         return BLE_GAP_REPEAT_PAIRING_RETRY;
 
+    default:
+        ESP_LOGI(TAG, "Unknown event type: %d", event->type);
+        break;
     }
 
     return 0;
@@ -240,11 +241,9 @@ static void nimble_host_config_init(void) {
 }
 
 esp_err_t ble_prov_init(ble_prov_wifi_connected_cb_t on_connected) {
-    esp_err_t ret;
-
     wifi_connected_cb = on_connected;
 
-    ret = nimble_port_init();
+    esp_err_t ret = nimble_port_init();
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize NimBLE port: %d", ret);
         return ret;
@@ -288,5 +287,5 @@ esp_err_t ble_prov_reset_credentials(void) {
 }
 
 ble_prov_status_t ble_prov_get_status(void) {
-    return current_status;
+    return (ble_prov_status_t)ble_prov_gatt_get_status();
 }

@@ -14,7 +14,7 @@ char time_buffer[TIME_BUFFER_SIZE];
 // ReSharper disable once CppParameterMayBeConstPtrOrRef
 static void time_sync_notification_cb(struct timeval *tv) {
     memset(time_buffer, 0, TIME_BUFFER_SIZE);
-    unix_to_human_utc((time_t)tv->tv_sec, time_buffer, TIME_BUFFER_SIZE);
+    unix_to_human_utc(tv->tv_sec, time_buffer, TIME_BUFFER_SIZE);
     ESP_LOGI(TIME_TAG, "Time synchronized: %s", time_buffer);
 
     time_synced = ESP_OK;
@@ -84,7 +84,7 @@ uint64_t get_unix_timestamp_ms(void) {
 }
 
 bool time_is_synced(void) {
-    return time_synced == ESP_OK && (esp_sntp_get_sync_status() == SNTP_SYNC_STATUS_COMPLETED);
+    return time_synced == ESP_OK && esp_sntp_get_sync_status() == SNTP_SYNC_STATUS_COMPLETED;
 }
 
 void time_set_timezone(const char* timezone) {

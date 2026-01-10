@@ -117,10 +117,9 @@ esp_err_t delete_from_sd(const char *filename) {
     if (unlink(filename) == 0) {
         ESP_LOGI(SD_TAG, "File deleted successfully");
         return ESP_OK;
-    } else {
-        ESP_LOGE(SD_TAG, "Failed to delete file");
-        return ESP_FAIL;
     }
+    ESP_LOGE(SD_TAG, "Failed to delete file");
+    return ESP_FAIL;
 }
 
 // SD Card Information Functions
@@ -153,7 +152,7 @@ void list_files_on_sd(const char* path) {
 
 bool file_exists_on_sd(const char *filename) {
     struct stat st;
-    return (stat(filename, &st) == 0);
+    return stat(filename, &st) == 0;
 }
 
 uint64_t get_file_size_on_sd(const char *filename) {
@@ -182,8 +181,8 @@ void get_sd_card_info(void) {
     DWORD fre_clust;
 
     if (f_getfree(MOUNT_POINT, &fre_clust, &fs) == FR_OK) {
-        uint64_t total_bytes = ((uint64_t)(fs->n_fatent - 2) * fs->csize * 512);
-        uint64_t free_bytes = ((uint64_t)fre_clust * fs->csize * 512);
+        uint64_t total_bytes = (uint64_t)(fs->n_fatent - 2) * fs->csize * 512;
+        uint64_t free_bytes = (uint64_t)fre_clust * fs->csize * 512;
 
         ESP_LOGI(SD_TAG, "SD Card Size: %llu MB", total_bytes / (1024 * 1024));
         ESP_LOGI(SD_TAG, "Free Space: %llu MB", free_bytes / (1024 * 1024));
@@ -246,37 +245,37 @@ static time_t parse_timestamp_from_filename(const char* filename) {
     // Parse YYYY
     strncpy(buf, start, 4);
     buf[4] = 0;
-    tm.tm_year = atoi(buf) - 1900;
+    tm.tm_year = (int)strtol(buf, NULL, 10) - 1900;
     start += 4;
 
     // Parse MM
     strncpy(buf, start, 2);
     buf[2] = 0;
-    tm.tm_mon = atoi(buf) - 1;
+    tm.tm_mon = (int)strtol(buf, NULL, 10) - 1;
     start += 2;
 
     // Parse DD
     strncpy(buf, start, 2);
     buf[2] = 0;
-    tm.tm_mday = atoi(buf);
-    start += 3; // Skip DD and '_'
+    tm.tm_mday = (int)strtol(buf, NULL, 10);
+    start += 3;
 
     // Parse HH
     strncpy(buf, start, 2);
     buf[2] = 0;
-    tm.tm_hour = atoi(buf);
+    tm.tm_hour = (int)strtol(buf, NULL, 10);
     start += 2;
 
     // Parse MM
     strncpy(buf, start, 2);
     buf[2] = 0;
-    tm.tm_min = atoi(buf);
+    tm.tm_min = (int)strtol(buf, NULL, 10);
     start += 2;
 
     // Parse SS
     strncpy(buf, start, 2);
     buf[2] = 0;
-    tm.tm_sec = atoi(buf);
+    tm.tm_sec = (int)strtol(buf, NULL, 10);
 
     return mktime(&tm);
 }
@@ -325,6 +324,7 @@ static void cleanup_old_files(const char* path) {
 static void cleanup_task_loop(void *arg) {
     const int check_interval_ms = 5 * 60 * 1000; // 5 minutes
 
+    // ReSharper disable once CppDFAEndlessLoop
     while (1) {
         // Wait first (offset the check from boot time)
         vTaskDelay(pdMS_TO_TICKS(check_interval_ms));
