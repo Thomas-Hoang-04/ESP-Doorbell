@@ -23,9 +23,10 @@ menu "Doorbell Configuration"
     menu "WebSocket Streaming"
         config WS_STREAM_URI
             string "WebSocket Server URI"
-            default "ws://192.168.1.100:8080/stream"
+            default "ws://localhost:8080/ws/stream/inbound"
             help
-                WebSocket server URI (ws:// or wss://) for streaming.
+                WebSocket server URI for streaming. Device ID appended automatically.
+                Use ws:// for dev (plain), wss:// for prod (SSL auto-enabled).
 
         config WS_STREAM_VIDEO_QUEUE_SIZE
             int "Video frame queue depth"
@@ -52,16 +53,16 @@ menu "Doorbell Configuration"
     menu "MQTT Configuration"
         config MQTT_BROKER_URL
             string "MQTT Broker URL"
-            default "mqtt://mqtt.thingsboard.cloud"
+            default "mqtts://mqtt.thingsboard.cloud"
             help
-                URL of the broker to connect to
+                URL of the broker to connect to (use mqtts:// for SSL, mqtt:// for MQTT)
 
         config MQTT_BROKER_PORT
             int "MQTT Broker Port"
             range 1 65535
-            default 1883
+            default 8883
             help
-                Port of the MQTT broker to use
+                Port of the MQTT broker to use (1883 for MQTT, 8883 for MQTTS)
 
         choice MQTT_AUTH_METHOD
             prompt "MQTT Authentication Method"
@@ -110,10 +111,10 @@ menu "Doorbell Configuration"
         menu "Topics"
             config MQTT_STREAM_CONTROL_TOPIC
                 string "Stream Control Topic"
-                default "doorbell/+/stream/+"
+                default "doorbell/%s/stream"
                 help
                     MQTT topic for receiving stream control commands.
-                    Uses wildcard (+) for device ID and action (start/stop).
+                    %s will be replaced with device ID.
                     Expected payload: {"action":"start_stream"} or {"action":"stop_stream"}
 
             config MQTT_HEARTBEAT_TOPIC
@@ -121,6 +122,13 @@ menu "Doorbell Configuration"
                 default "doorbell/%s/heartbeat"
                 help
                     MQTT topic for publishing heartbeat messages.
+                    %s will be replaced with device ID (MQTT_CLIENT_ID).
+
+            config MQTT_BELL_EVENT_TOPIC
+                string "Bell Event Publish Topic"
+                default "doorbell/%s/event/bell"
+                help
+                    MQTT topic for publishing bell press events.
                     %s will be replaced with device ID (MQTT_CLIENT_ID).
         endmenu
     endmenu

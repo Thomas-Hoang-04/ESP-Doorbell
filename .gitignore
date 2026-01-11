@@ -10,3 +10,5 @@ cmake-build-debug/
 *.md
 
 notes.txt
+
+**/certs/

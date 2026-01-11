@@ -42,5 +42,8 @@ file(GLOB_RECURSE SOURCES "*.c")
 # --- Register Component ---
 idf_component_register(SRCS "main.c" ${SOURCES}
                        PRIV_REQUIRES ${DEPS}
-                       INCLUDE_DIRS "")
+                       INCLUDE_DIRS ""
+                       EMBED_TXTFILES "network/certs/ca.pem"
+                                      "network/certs/client.pem"
+                                      "network/certs/client.key")
 

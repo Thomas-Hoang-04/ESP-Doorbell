@@ -37,7 +37,9 @@ static void bell_button_capture_callback(btn_event_t event, void *ctx)
         return;
     }
 
-    ESP_LOGI(TAG, "Bell pressed - starting capture");
+    ESP_LOGI(TAG, "Bell pressed - notifying backend and starting capture");
+
+    mqtt_publish_bell_event();
 
     start_capture_task();
     capture_timer_start();

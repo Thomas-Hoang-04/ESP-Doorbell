@@ -7,6 +7,11 @@
 #include "freertos/semphr.h"
 #include <string.h>
 #include <stdlib.h>
+#include "../ble_prov/ble_prov_nvs.h"
+
+extern const uint8_t ca_pem_start[]     asm("_binary_ca_pem_start");
+extern const uint8_t client_pem_start[] asm("_binary_client_pem_start");
+extern const uint8_t client_key_start[] asm("_binary_client_key_start");
 
 #define TAG "WS_STREAM"
 
@@ -18,7 +23,6 @@
 
 typedef struct {
     uint8_t type;
-    uint32_t seq_num;
     uint32_t pts;
     size_t size;
     uint8_t *data;
@@ -37,9 +41,6 @@ typedef struct {
     bool enabled;
     bool connected;
     bool running;
-    
-    uint32_t video_seq;
-    uint32_t audio_seq;
     
     uint32_t reconnect_delay_ms;
 } ws_stream_handle_t;
@@ -75,19 +76,15 @@ static void websocket_event_handler(void *handler_args, esp_event_base_t base, i
 
 static esp_err_t send_frame(ws_stream_handle_t *handle, frame_queue_item_t *item)
 {
-    uint8_t header[12];
+    uint8_t header[8];
     header[0] = WS_STREAM_MAGIC >> 8 & 0xFF;
     header[1] = WS_STREAM_MAGIC & 0xFF;
     header[2] = item->type;
     header[3] = 0;
-    header[4] = item->seq_num >> 24 & 0xFF;
-    header[5] = item->seq_num >> 16 & 0xFF;
-    header[6] = item->seq_num >> 8 & 0xFF;
-    header[7] = item->seq_num & 0xFF;
-    header[8] = item->pts >> 24 & 0xFF;
-    header[9] = item->pts >> 16 & 0xFF;
-    header[10] = item->pts >> 8 & 0xFF;
-    header[11] = item->pts & 0xFF;
+    header[4] = item->pts >> 24 & 0xFF;
+    header[5] = item->pts >> 16 & 0xFF;
+    header[6] = item->pts >> 8 & 0xFF;
+    header[7] = item->pts & 0xFF;
     
     // ReSharper disable once CppRedundantCastExpression
     int sent = esp_websocket_client_send_bin_partial(handle->client, (const char *)header, sizeof(header),
@@ -200,11 +197,43 @@ esp_err_t ws_stream_init(const ws_stream_config_t *config)
     if (config) {
         g_ws_handle->config = *config;
     } else {
-        g_ws_handle->config.uri = CONFIG_WS_STREAM_URI;
+        // Construct dynamic URI with device ID
+        static char dynamic_uri[256];
+        char device_id[64] = "unknown";
+        size_t len = sizeof(device_id);
+        
+        nvs_handle_t handle;
+        if (nvs_open(NVS_NAMESPACE, NVS_READONLY, &handle) == ESP_OK) {
+            nvs_get_str(handle, NVS_KEY_DEVICE_ID, device_id, &len);
+            nvs_close(handle);
+        }
+        
+        snprintf(dynamic_uri, sizeof(dynamic_uri), "%s/%s", CONFIG_WS_STREAM_URI, device_id);
+        g_ws_handle->config.uri = dynamic_uri;
+        ESP_LOGI(TAG, "Using WebSocket URI: %s", dynamic_uri);
+
         g_ws_handle->config.video_queue_size = CONFIG_WS_STREAM_VIDEO_QUEUE_SIZE;
         g_ws_handle->config.audio_queue_size = CONFIG_WS_STREAM_AUDIO_QUEUE_SIZE;
         g_ws_handle->config.reconnect_timeout_ms = CONFIG_WS_STREAM_RECONNECT_TIMEOUT_MS;
         g_ws_handle->config.max_frame_size = DEFAULT_MAX_FRAME_SIZE;
+    }
+    
+    static char auth_header[256];
+    auth_header[0] = '\0';
+    
+    {
+        char device_key[128] = "";
+        size_t key_len = sizeof(device_key);
+        nvs_handle_t key_handle;
+        if (nvs_open(NVS_NAMESPACE, NVS_READONLY, &key_handle) == ESP_OK) {
+            if (nvs_get_str(key_handle, NVS_KEY_DEVICE_KEY, device_key, &key_len) == ESP_OK) {
+                snprintf(auth_header, sizeof(auth_header), "X-Device-Key: %s\r\n", device_key);
+                ESP_LOGI(TAG, "Device key loaded for authentication");
+            } else {
+                ESP_LOGW(TAG, "Device key not found in NVS");
+            }
+            nvs_close(key_handle);
+        }
     }
     
     g_ws_handle->video_queue = xQueueCreate(g_ws_handle->config.video_queue_size, sizeof(frame_queue_item_t));
@@ -223,7 +252,16 @@ esp_err_t ws_stream_init(const ws_stream_config_t *config)
         .network_timeout_ms = 10000,
         .reconnect_timeout_ms = (int)g_ws_handle->config.reconnect_timeout_ms,
         .disable_auto_reconnect = true,
+        .headers = auth_header[0] != '\0' ? auth_header : NULL,
     };
+
+    if (strncmp(g_ws_handle->config.uri, "wss://", 6) == 0) {
+        ESP_LOGI(TAG, "WSS detected, enabling SSL");
+        ws_cfg.cert_pem = (const char *)ca_pem_start;
+        ws_cfg.client_cert = (const char *)client_pem_start;
+        ws_cfg.client_key = (const char *)client_key_start;
+        ws_cfg.skip_cert_common_name_check = true;
+    }
     
     g_ws_handle->client = esp_websocket_client_init(&ws_cfg);
     if (!g_ws_handle->client) {
@@ -293,24 +331,21 @@ esp_err_t ws_stream_queue_frame(esp_capture_stream_type_t type, const uint8_t *d
     
     QueueHandle_t queue;
     uint8_t frame_type;
-    uint32_t *seq_num;
     
     if (type == ESP_CAPTURE_STREAM_TYPE_VIDEO) {
         queue = g_ws_handle->video_queue;
         frame_type = WS_STREAM_TYPE_VIDEO;
-        seq_num = &g_ws_handle->video_seq;
     } else if (type == ESP_CAPTURE_STREAM_TYPE_AUDIO) {
         queue = g_ws_handle->audio_queue;
         frame_type = WS_STREAM_TYPE_AUDIO;
-        seq_num = &g_ws_handle->audio_seq;
     } else {
         return ESP_ERR_INVALID_ARG;
     }
     
     frame_queue_item_t item;
     item.type = frame_type;
-    item.seq_num = (*seq_num)++;
     item.pts = pts;
+
     item.size = size;
     // ReSharper disable CppDFAMemoryLeak
     item.data = malloc(size);
