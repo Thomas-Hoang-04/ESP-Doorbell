@@ -84,6 +84,15 @@ esp_mqtt_client_handle_t get_mqtt_client(void);
  */
 esp_err_t mqtt_publish_heartbeat(const char *json_payload);
 
+/**
+ * @brief Publish a bell press event to the backend
+ *
+ * Publishes a JSON-formatted bell event to CONFIG_MQTT_BELL_EVENT_TOPIC.
+ *
+ * @return ESP_OK on success, error code otherwise
+ */
+esp_err_t mqtt_publish_bell_event(void);
+
 #ifdef __cplusplus
 }
 #endif

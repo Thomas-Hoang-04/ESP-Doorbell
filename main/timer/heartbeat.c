@@ -13,6 +13,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <time.h>
+#include "../ble_prov/ble_prov_nvs.h"
 
 #include "../network/mqtt.h"
 #include "../network/wifi.h"
@@ -71,8 +72,25 @@ static char* build_heartbeat_json(void) {
         return NULL;
     }
 
+    // Load device identity from NVS
+    char device_id[64] = MQTT_CLIENT_ID;
+    uint8_t device_key[DEVICE_KEY_LENGTH] = {0};
+    char device_key_hex[DEVICE_KEY_LENGTH * 2 + 1] = {0};
+    size_t id_len = sizeof(device_id);
+    nvs_handle_t handle;
+    if (nvs_open(NVS_NAMESPACE, NVS_READONLY, &handle) == ESP_OK) {
+        nvs_get_str(handle, NVS_KEY_DEVICE_ID, device_id, &id_len);
+        if (ble_prov_nvs_load_device_key(device_key, DEVICE_KEY_LENGTH) == ESP_OK) {
+            for (int i = 0; i < DEVICE_KEY_LENGTH; i++) {
+                snprintf(&device_key_hex[i * 2], 3, "%02x", device_key[i]);
+            }
+        }
+        nvs_close(handle);
+    }
+
     // Device identification
-    cJSON_AddStringToObject(root, "device_id", MQTT_CLIENT_ID);
+    cJSON_AddStringToObject(root, "device_id", device_id);
+    cJSON_AddStringToObject(root, "device_key", device_key_hex);
     
     // Timestamp (milliseconds since epoch, or just uptime-based for now)
     cJSON_AddNumberToObject(root, "timestamp", (double)esp_timer_get_time() / 1000);

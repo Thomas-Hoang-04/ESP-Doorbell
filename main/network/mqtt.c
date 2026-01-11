@@ -5,6 +5,14 @@
 
 #include "../video/video_capture.h"
 #include "../websocket/ws_stream.h"
+#include "../ble_prov/ble_prov_nvs.h"
+
+extern const uint8_t ca_pem_start[]     asm("_binary_ca_pem_start");
+extern const uint8_t ca_pem_end[]       asm("_binary_ca_pem_end");
+extern const uint8_t client_pem_start[] asm("_binary_client_pem_start");
+extern const uint8_t client_pem_end[]   asm("_binary_client_pem_end");
+extern const uint8_t client_key_start[] asm("_binary_client_key_start");
+extern const uint8_t client_key_end[]   asm("_binary_client_key_end");
 
 // Stream Control Handler
 static void handle_stream_control(const char *action);
@@ -14,6 +22,7 @@ static const char* parse_stream_action(const char *json_data, int data_len);
 
 // MQTT Client Handle
 static esp_mqtt_client_handle_t s_mqtt_client = NULL;
+static char s_device_id[64] = MQTT_CLIENT_ID; // Default to Kconfig ID
 
 // ---------------------------------------------------------------------------
 // Logging Utility
@@ -96,9 +105,11 @@ static void mqtt_event_handler(void* args, esp_event_base_t event_base, int32_t 
         case MQTT_EVENT_CONNECTED:
             ESP_LOGI(MQTT_TAG, "Connected to MQTT host: %s", MQTT_HOST);
             // Subscribe to stream control topic
-            msg_id = esp_mqtt_client_subscribe(client, CONFIG_MQTT_STREAM_CONTROL_TOPIC, 1);
+            char topic[128];
+            snprintf(topic, sizeof(topic), CONFIG_MQTT_STREAM_CONTROL_TOPIC, s_device_id);
+            msg_id = esp_mqtt_client_subscribe(client, topic, 1);
             ESP_LOGI(MQTT_TAG, "Subscribed to stream control topic: %s, msg_id: %d", 
-                     CONFIG_MQTT_STREAM_CONTROL_TOPIC, msg_id);
+                     topic, msg_id);
             break;
 
         case MQTT_EVENT_DISCONNECTED:
@@ -149,15 +160,31 @@ static void mqtt_event_handler(void* args, esp_event_base_t event_base, int32_t 
 // MQTT Client Initialization
 // ---------------------------------------------------------------------------
 esp_mqtt_client_handle_t init_mqtt(void) {
+    // Attempt to load device ID from NVS
+    char nvs_device_id[64] = {0};
+    size_t len = sizeof(nvs_device_id);
+    nvs_handle_t handle;
+    if (nvs_open(NVS_NAMESPACE, NVS_READONLY, &handle) == ESP_OK) {
+        if (nvs_get_str(handle, NVS_KEY_DEVICE_ID, nvs_device_id, &len) == ESP_OK) {
+            strncpy(s_device_id, nvs_device_id, sizeof(s_device_id) - 1);
+            ESP_LOGI(MQTT_TAG, "Loaded device ID from NVS: %s", s_device_id);
+        }
+        nvs_close(handle);
+    }
+
     esp_mqtt_client_config_t mqtt_cfg = {
         .broker = {
             .address = {
                 .uri = MQTT_HOST,
                 .port = MQTT_PORT,
+            },
+            .verification = {
+                .certificate = (const char *)ca_pem_start,
+                .skip_cert_common_name_check = true,
             }
         },
         .credentials = {
-            .client_id = MQTT_CLIENT_ID,
+            .client_id = s_device_id,
             .set_null_client_id = false,
 #ifdef CONFIG_MQTT_AUTH_ACCESS_TOKEN
             .username = CONFIG_MQTT_ACCESS_TOKEN,
@@ -165,6 +192,8 @@ esp_mqtt_client_handle_t init_mqtt(void) {
             .username = CONFIG_MQTT_USERNAME,
             .authentication = {
                 .password = CONFIG_MQTT_PASSWORD,
+                .certificate = (const char *)client_pem_start,
+                .key = (const char *)client_key_start,
             }
 #endif
         },
@@ -207,7 +236,7 @@ esp_err_t mqtt_publish_heartbeat(const char *json_payload) {
 
     // Format topic with device ID
     char topic[128];
-    snprintf(topic, sizeof(topic), CONFIG_MQTT_HEARTBEAT_TOPIC, MQTT_CLIENT_ID);
+    snprintf(topic, sizeof(topic), CONFIG_MQTT_HEARTBEAT_TOPIC, s_device_id);
 
     int msg_id = esp_mqtt_client_publish(s_mqtt_client, topic, json_payload, 0, 1, false);
     if (msg_id < 0) {
@@ -216,6 +245,55 @@ esp_err_t mqtt_publish_heartbeat(const char *json_payload) {
     }
 
     ESP_LOGD(MQTT_TAG, "Heartbeat published to %s, msg_id: %d", topic, msg_id);
+    return ESP_OK;
+}
+
+esp_err_t mqtt_publish_bell_event(void) {
+    if (!s_mqtt_client) {
+        ESP_LOGE(MQTT_TAG, "MQTT client not initialized");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    // Load device key from NVS
+    uint8_t device_key[DEVICE_KEY_LENGTH] = {0};
+    char device_key_hex[DEVICE_KEY_LENGTH * 2 + 1] = {0};
+    if (ble_prov_nvs_load_device_key(device_key, DEVICE_KEY_LENGTH) == ESP_OK) {
+        for (int i = 0; i < DEVICE_KEY_LENGTH; i++) {
+            snprintf(&device_key_hex[i * 2], 3, "%02x", device_key[i]);
+        }
+    }
+
+    // Build JSON payload
+    cJSON *root = cJSON_CreateObject();
+    if (!root) {
+        ESP_LOGE(MQTT_TAG, "Failed to create bell event JSON");
+        return ESP_ERR_NO_MEM;
+    }
+    cJSON_AddStringToObject(root, "device_id", s_device_id);
+    cJSON_AddStringToObject(root, "device_key", device_key_hex);
+    cJSON_AddNumberToObject(root, "timestamp", (double)(esp_timer_get_time() / 1000));
+    cJSON_AddStringToObject(root, "event", "bell_pressed");
+
+    char *payload = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+
+    if (!payload) {
+        ESP_LOGE(MQTT_TAG, "Failed to serialize bell event JSON");
+        return ESP_ERR_NO_MEM;
+    }
+
+    char topic[128];
+    snprintf(topic, sizeof(topic), CONFIG_MQTT_BELL_EVENT_TOPIC, s_device_id);
+
+    int msg_id = esp_mqtt_client_publish(s_mqtt_client, topic, payload, 0, 1, false);
+    free(payload);
+
+    if (msg_id < 0) {
+        ESP_LOGE(MQTT_TAG, "Failed to publish bell event");
+        return ESP_FAIL;
+    }
+
+    ESP_LOGI(MQTT_TAG, "Bell event published to %s, msg_id: %d", topic, msg_id);
     return ESP_OK;
 }
 
