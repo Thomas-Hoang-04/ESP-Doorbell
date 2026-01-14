@@ -9,12 +9,13 @@
 #include "heartbeat.h"
 #include "esp_timer.h"
 #include "esp_log.h"
+#include "nvs_flash.h"
 #include <cJSON.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <time.h>
-#include "../ble_prov/ble_prov_nvs.h"
 
+#include "../ble_prov/ble_prov_nvs.h"
 #include "../network/mqtt.h"
 #include "../network/wifi.h"
 #include "../video/video_capture.h"
@@ -73,7 +74,7 @@ static char* build_heartbeat_json(void) {
     }
 
     // Load device identity from NVS
-    char device_id[64] = MQTT_CLIENT_ID;
+    char device_id[64] = {0};
     uint8_t device_key[DEVICE_KEY_LENGTH] = {0};
     char device_key_hex[DEVICE_KEY_LENGTH * 2 + 1] = {0};
     size_t id_len = sizeof(device_id);

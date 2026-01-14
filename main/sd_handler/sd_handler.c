@@ -6,6 +6,7 @@
 #include "sd_handler.h"
 #include "esp_err.h"
 #include "esp_log.h"
+#include "esp_heap_caps.h"
 #include "esp_vfs_fat.h"
 #include "driver/sdmmc_default_configs.h"
 #include "driver/sdmmc_host.h"
@@ -224,60 +225,151 @@ void get_sd_card_info(void) {
 // File Cleanup Logic
 // ---------------------------------------------------------------------------
 
+#define MIN_FREE_SPACE_MB 50
+#define MAX_CLEANUP_FILES 256
+#define CLEANUP_DAYS 7
+
 static TaskHandle_t s_cleanup_task = NULL;
 static char s_cleanup_path[64] = {0};
 
+typedef struct {
+    char filename[128];
+    time_t timestamp;
+} file_entry_t;
+
 static time_t parse_timestamp_from_filename(const char* filename) {
-    // Expected format: capture-YYYYMMDD_HHMMSS_Z-INDEX.mp4
-    // Example: capture-20250101_120000_UTC-0.mp4
-    
-    // Find "capture-" prefix
     const char* start = strstr(filename, "capture-");
     if (!start) return 0;
-    start += 8; // Skip "capture-"
+    start += 8;
 
-    // Check we have enough length (YYYYMMDD_HHMMSS is 15 chars)
     if (strlen(start) < 15) return 0;
 
     struct tm tm = {0};
     char buf[8] = {0};
 
-    // Parse YYYY
     strncpy(buf, start, 4);
     buf[4] = 0;
     tm.tm_year = (int)strtol(buf, NULL, 10) - 1900;
     start += 4;
 
-    // Parse MM
     strncpy(buf, start, 2);
     buf[2] = 0;
     tm.tm_mon = (int)strtol(buf, NULL, 10) - 1;
     start += 2;
 
-    // Parse DD
     strncpy(buf, start, 2);
     buf[2] = 0;
     tm.tm_mday = (int)strtol(buf, NULL, 10);
     start += 3;
 
-    // Parse HH
     strncpy(buf, start, 2);
     buf[2] = 0;
     tm.tm_hour = (int)strtol(buf, NULL, 10);
     start += 2;
 
-    // Parse MM
     strncpy(buf, start, 2);
     buf[2] = 0;
     tm.tm_min = (int)strtol(buf, NULL, 10);
     start += 2;
 
-    // Parse SS
     strncpy(buf, start, 2);
     buf[2] = 0;
     tm.tm_sec = (int)strtol(buf, NULL, 10);
 
     return mktime(&tm);
+}
+
+static uint64_t get_sd_free_space_mb(void) {
+    FATFS *fs;
+    DWORD fre_clust;
+    if (f_getfree(MOUNT_POINT, &fre_clust, &fs) != FR_OK) {
+        return 0;
+    }
+    uint64_t free_bytes = (uint64_t)fre_clust * fs->csize * 512;
+    return free_bytes / (1024 * 1024);
+}
+
+static int compare_file_entries(const void* a, const void* b) {
+    const file_entry_t* fa = (const file_entry_t*)a;
+    const file_entry_t* fb = (const file_entry_t*)b;
+    if (fa->timestamp < fb->timestamp) return -1;
+    if (fa->timestamp > fb->timestamp) return 1;
+    return 0;
+}
+
+static void cleanup_for_low_storage(const char* path) {
+    uint64_t free_mb = get_sd_free_space_mb();
+    if (free_mb >= MIN_FREE_SPACE_MB) {
+        return;
+    }
+
+    ESP_LOGW(SD_TAG, "Low storage detected (%llu MB free). Cleaning up recent files...", free_mb);
+
+    DIR *dir = opendir(path);
+    if (dir == NULL) {
+        ESP_LOGE(SD_TAG, "Low storage cleanup: Failed to open directory: %s", path);
+        return;
+    }
+
+    time_t now = time(NULL);
+    double max_age_seconds = (double)CLEANUP_DAYS * 24.0 * 3600.0;
+
+    file_entry_t* entries = heap_caps_malloc(sizeof(file_entry_t) * MAX_CLEANUP_FILES, MALLOC_CAP_SPIRAM);
+    if (entries == NULL) {
+        ESP_LOGE(SD_TAG, "Failed to allocate memory for file entries");
+        closedir(dir);
+        return;
+    }
+
+    int file_count = 0;
+    struct dirent *entry;
+
+    while ((entry = readdir(dir)) != NULL && file_count < MAX_CLEANUP_FILES) {
+        if (entry->d_type != DT_REG) continue;
+
+        time_t file_time = parse_timestamp_from_filename(entry->d_name);
+        if (file_time == 0) continue;
+
+        double age = difftime(now, file_time);
+        if (age <= max_age_seconds) {
+            strncpy(entries[file_count].filename, entry->d_name, sizeof(entries[file_count].filename) - 1);
+            entries[file_count].filename[sizeof(entries[file_count].filename) - 1] = '\0';
+            entries[file_count].timestamp = file_time;
+            file_count++;
+        }
+    }
+    closedir(dir);
+
+    if (file_count == 0) {
+        ESP_LOGI(SD_TAG, "No recent files to clean up");
+        free(entries);
+        return;
+    }
+
+    qsort(entries, file_count, sizeof(file_entry_t), compare_file_entries);
+
+    int deleted_count = 0;
+    char full_path[512];
+
+    for (int i = 0; i < file_count; i++) {
+        free_mb = get_sd_free_space_mb();
+        if (free_mb >= MIN_FREE_SPACE_MB) {
+            ESP_LOGI(SD_TAG, "Storage recovered (%llu MB free). Stopping cleanup.", free_mb);
+            break;
+        }
+
+        snprintf(full_path, sizeof(full_path), "%s/%s", path, entries[i].filename);
+        ESP_LOGI(SD_TAG, "Low storage: Deleting %s", entries[i].filename);
+
+        if (unlink(full_path) == 0) {
+            deleted_count++;
+        } else {
+            ESP_LOGE(SD_TAG, "Failed to delete: %s", full_path);
+        }
+    }
+
+    free(entries);
+    ESP_LOGI(SD_TAG, "Low storage cleanup complete. Deleted %d files.", deleted_count);
 }
 
 static void cleanup_old_files(const char* path) {
@@ -290,7 +382,6 @@ static void cleanup_old_files(const char* path) {
     ESP_LOGI(SD_TAG, "Running file cleanup on %s...", path);
 
     time_t now = time(NULL);
-    // Convert retention hours to seconds
     double max_age_seconds = (double)CONFIG_RECORDING_RETENTION_HOURS * 3600.0;
     int deleted_count = 0;
 
@@ -298,10 +389,10 @@ static void cleanup_old_files(const char* path) {
     char full_path[512];
 
     while ((entry = readdir(dir)) != NULL) {
-        if (entry->d_type != DT_REG) continue; // Skip non-files
+        if (entry->d_type != DT_REG) continue;
 
         time_t file_time = parse_timestamp_from_filename(entry->d_name);
-        if (file_time == 0) continue; // Couldn't parse timestamp
+        if (file_time == 0) continue;
 
         double age = difftime(now, file_time);
 
@@ -319,6 +410,8 @@ static void cleanup_old_files(const char* path) {
 
     closedir(dir);
     ESP_LOGI(SD_TAG, "Cleanup complete. Deleted %d files.", deleted_count);
+
+    cleanup_for_low_storage(path);
 }
 
 static void cleanup_task_loop(void *arg) {
@@ -342,7 +435,7 @@ void start_file_cleanup_task(const char* path) {
     // copy path
     strncpy(s_cleanup_path, path, sizeof(s_cleanup_path) - 1);
 
-    if (xTaskCreate(cleanup_task_loop, "cleanup_task", 4096, NULL, 1, &s_cleanup_task) != pdPASS) {
+    if (xTaskCreatePinnedToCore(cleanup_task_loop, "cleanup_task", 4096, NULL, 1, &s_cleanup_task, 1) != pdPASS) {
         ESP_LOGE(SD_TAG, "Failed to create cleanup task");
     } else {
         ESP_LOGI(SD_TAG, "Cleanup task started (Retention: %d hours)", CONFIG_RECORDING_RETENTION_HOURS);
