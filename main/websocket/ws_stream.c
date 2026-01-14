@@ -5,13 +5,15 @@
 #include "freertos/task.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
+#include "nvs_flash.h"
+#include "esp_heap_caps.h"
+#include "../ble_prov/ble_prov_nvs.h"
 #include <string.h>
 #include <stdlib.h>
-#include "../ble_prov/ble_prov_nvs.h"
 
-extern const uint8_t ca_pem_start[]     asm("_binary_ca_pem_start");
-extern const uint8_t client_pem_start[] asm("_binary_client_pem_start");
-extern const uint8_t client_key_start[] asm("_binary_client_key_start");
+extern const uint8_t ca_pem_start[]             asm("_binary_ca_pem_start");
+extern const uint8_t esp32_client_pem_start[]   asm("_binary_esp32_client_pem_start");
+extern const uint8_t esp32_client_key_start[]   asm("_binary_esp32_client_key_start");
 
 #define TAG "WS_STREAM"
 
@@ -189,7 +191,7 @@ esp_err_t ws_stream_init(const ws_stream_config_t *config)
         return ESP_ERR_INVALID_STATE;
     }
     
-    g_ws_handle = calloc(1, sizeof(ws_stream_handle_t));
+    g_ws_handle = heap_caps_calloc(1, sizeof(ws_stream_handle_t), MALLOC_CAP_SPIRAM);
     if (!g_ws_handle) {
         return ESP_ERR_NO_MEM;
     }
@@ -222,12 +224,16 @@ esp_err_t ws_stream_init(const ws_stream_config_t *config)
     auth_header[0] = '\0';
     
     {
-        char device_key[128] = "";
-        size_t key_len = sizeof(device_key);
+        uint8_t device_key_raw[DEVICE_KEY_LENGTH];
+        size_t key_len = sizeof(device_key_raw);
         nvs_handle_t key_handle;
         if (nvs_open(NVS_NAMESPACE, NVS_READONLY, &key_handle) == ESP_OK) {
-            if (nvs_get_str(key_handle, NVS_KEY_DEVICE_KEY, device_key, &key_len) == ESP_OK) {
-                snprintf(auth_header, sizeof(auth_header), "X-Device-Key: %s\r\n", device_key);
+            if (nvs_get_blob(key_handle, NVS_KEY_DEVICE_KEY, device_key_raw, &key_len) == ESP_OK) {
+                char hex_key[DEVICE_KEY_LENGTH * 2 + 1];
+                for (size_t i = 0; i < key_len; i++) {
+                    sprintf(&hex_key[i * 2], "%02x", device_key_raw[i]);
+                }
+                snprintf(auth_header, sizeof(auth_header), "X-Device-Key: %s\r\n", hex_key);
                 ESP_LOGI(TAG, "Device key loaded for authentication");
             } else {
                 ESP_LOGW(TAG, "Device key not found in NVS");
@@ -258,8 +264,8 @@ esp_err_t ws_stream_init(const ws_stream_config_t *config)
     if (strncmp(g_ws_handle->config.uri, "wss://", 6) == 0) {
         ESP_LOGI(TAG, "WSS detected, enabling SSL");
         ws_cfg.cert_pem = (const char *)ca_pem_start;
-        ws_cfg.client_cert = (const char *)client_pem_start;
-        ws_cfg.client_key = (const char *)client_key_start;
+        ws_cfg.client_cert = (const char *)esp32_client_pem_start;
+        ws_cfg.client_key = (const char *)esp32_client_key_start;
         ws_cfg.skip_cert_common_name_check = true;
     }
     
@@ -276,8 +282,8 @@ esp_err_t ws_stream_init(const ws_stream_config_t *config)
     g_ws_handle->running = true;
     g_ws_handle->reconnect_delay_ms = g_ws_handle->config.reconnect_timeout_ms;
     
-    if (xTaskCreate(ws_send_task, "ws_send", WS_TASK_STACK_SIZE, g_ws_handle,
-                    WS_TASK_PRIORITY, &g_ws_handle->send_task) != pdPASS) {
+    if (xTaskCreatePinnedToCore(ws_send_task, "ws_send", WS_TASK_STACK_SIZE, g_ws_handle,
+                    WS_TASK_PRIORITY, &g_ws_handle->send_task, 1) != pdPASS) {
         ESP_LOGE(TAG, "Failed to create send task");
         ws_stream_destroy();
         return ESP_FAIL;
@@ -348,7 +354,7 @@ esp_err_t ws_stream_queue_frame(esp_capture_stream_type_t type, const uint8_t *d
 
     item.size = size;
     // ReSharper disable CppDFAMemoryLeak
-    item.data = malloc(size);
+    item.data = heap_caps_malloc(size, MALLOC_CAP_SPIRAM);
     
     if (!item.data) {
         return ESP_ERR_NO_MEM;

@@ -134,7 +134,7 @@ void create_bell_button_task(void)
         return;
     }
 
-    BaseType_t ret = xTaskCreate(bell_button_task, "bell_button_task", 4096, NULL, 10, &s_button_task_handle);
+    BaseType_t ret = xTaskCreatePinnedToCore(bell_button_task, "bell_button_task", 4096, NULL, 10, &s_button_task_handle, 1);
     if (ret != pdPASS) {
         ESP_LOGE(BELL_BUTTON_TAG, "Failed to create bell button task");
         s_button_task_handle = NULL;

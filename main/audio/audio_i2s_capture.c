@@ -12,6 +12,7 @@
 
 #include "esp_err.h"
 #include "esp_log.h"
+#include "esp_heap_caps.h"
 
 #include "audio_i2s_capture.h"
 #include "audio_i2s_common.h"

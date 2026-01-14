@@ -184,7 +184,7 @@ void start_capture_task(void) {
     }
 
     should_exit = false;
-    if (xTaskCreate(start_capture, "av_capture_task", 16 * 1024, NULL, 5, &capture_task) != pdPASS) {
+    if (xTaskCreatePinnedToCore(start_capture, "av_capture_task", 16 * 1024, NULL, 5, &capture_task, 1) != pdPASS) {
         ESP_LOGE(AV_LOG_TAG, "Failed to create capture task");
         capture_task = NULL;
     }

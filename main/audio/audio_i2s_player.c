@@ -9,11 +9,13 @@
 #include "freertos/semphr.h"
 #include "driver/i2s_common.h"
 #include "esp_log.h"
+#include "esp_heap_caps.h"
 #include "esp_audio_simple_dec.h"
 #include "esp_audio_simple_dec_default.h"
 #include "esp_audio_dec.h"
 #include "esp_check.h"
 #include "esp_opus_dec.h"
+
 
 #define DECODE_BUFFER_SIZE 4096
 #define FILE_READ_CHUNK_SIZE 2048
@@ -47,17 +49,16 @@ static esp_audio_simple_dec_type_t get_simple_dec_type_from_extension(const char
 {
     const char *ext = strrchr(file_path, '.');
     if (!ext) {
+        ESP_LOGE(AUDIO_PLAYER_TAG, "Invalid file path: %s", file_path);
         return ESP_AUDIO_SIMPLE_DEC_TYPE_NONE;
     }
     ext++;
     
-    if (strcasecmp(ext, "aac") == 0) {
-        return ESP_AUDIO_SIMPLE_DEC_TYPE_AAC;
-    }
-    if (strcasecmp(ext, "m4a") == 0 || strcasecmp(ext, "mp4") == 0) {
-        return ESP_AUDIO_SIMPLE_DEC_TYPE_M4A;
+    if (strcasecmp(ext, "wav") == 0) {
+        return ESP_AUDIO_SIMPLE_DEC_TYPE_WAV;
     }
 
+    ESP_LOGE(AUDIO_PLAYER_TAG, "Unsupported file format: %s", ext);
     return ESP_AUDIO_SIMPLE_DEC_TYPE_NONE;
 }
 
@@ -129,7 +130,7 @@ static void audio_player_cleanup(audio_i2s_player_t *player)
 
 esp_err_t audio_i2s_player_init(const audio_i2s_player_cfg_t *cfg)
 {
-    audio_i2s_player_t *player = calloc(1, sizeof(audio_i2s_player_t));
+    audio_i2s_player_t *player = heap_caps_calloc(1, sizeof(audio_i2s_player_t), MALLOC_CAP_SPIRAM);
     ESP_RETURN_ON_FALSE(player, ESP_ERR_NO_MEM, AUDIO_PLAYER_TAG, "Failed to allocate player");
 
     if (cfg) {
@@ -174,8 +175,8 @@ esp_err_t audio_i2s_player_init(const audio_i2s_player_cfg_t *cfg)
         return ESP_FAIL;
     }
 
-    BaseType_t task_created = xTaskCreate(audio_player_task, "audio_player_task", 6144,
-                                          player, 5, &player->task_handle);
+    BaseType_t task_created = xTaskCreatePinnedToCore(audio_player_task, "audio_player_task", 6144,
+                                          player, 5, &player->task_handle, 1);
     if (task_created != pdPASS) {
         ESP_LOGE(AUDIO_PLAYER_TAG, "Failed to create audio player task");
         audio_player_cleanup(player);
@@ -200,11 +201,20 @@ esp_err_t audio_i2s_player_play_file(const char *file_path)
     }
 
     esp_audio_simple_dec_type_t dec_type = get_simple_dec_type_from_extension(file_path);
-    ESP_RETURN_ON_FALSE(dec_type != ESP_AUDIO_SIMPLE_DEC_TYPE_NONE,
-                        ESP_ERR_NOT_SUPPORTED, AUDIO_PLAYER_TAG, "Unsupported file format");
+    if (dec_type == ESP_AUDIO_SIMPLE_DEC_TYPE_NONE) {
+        ESP_LOGE(AUDIO_PLAYER_TAG, "Unsupported file format");
+        xSemaphoreGive(player->mutex);
+        return ESP_ERR_NOT_SUPPORTED;
+    }
 
     FILE *fp = fopen(file_path, "rb");
-    ESP_RETURN_ON_FALSE(fp, ESP_ERR_NOT_FOUND, AUDIO_PLAYER_TAG, "Failed to open file: %s", file_path);
+    if (!fp) {
+        ESP_LOGE(AUDIO_PLAYER_TAG, "Failed to open file: %s", file_path);
+        xSemaphoreGive(player->mutex);
+        return ESP_ERR_NOT_FOUND;
+    }
+
+
 
     esp_audio_simple_dec_cfg_t dec_cfg = {
         .dec_type = dec_type,
@@ -216,14 +226,15 @@ esp_err_t audio_i2s_player_play_file(const char *file_path)
     if (ret != ESP_AUDIO_ERR_OK) {
         ESP_LOGE(AUDIO_PLAYER_TAG, "Failed to open simple decoder: %d", ret);
         fclose(fp);
+        xSemaphoreGive(player->mutex);
         return ESP_FAIL;
     }
 
-    player->current_type = ESP_AUDIO_TYPE_AAC;
+    player->current_type = ESP_AUDIO_TYPE_PCM;
     player->playing = true;
 
-    uint8_t *read_buf = malloc(FILE_READ_CHUNK_SIZE);
-    uint8_t *decode_buf = malloc(DECODE_BUFFER_SIZE);
+    uint8_t *read_buf = heap_caps_malloc(FILE_READ_CHUNK_SIZE, MALLOC_CAP_DMA);
+    uint8_t *decode_buf = heap_caps_malloc(DECODE_BUFFER_SIZE, MALLOC_CAP_DMA);
     if (!read_buf || !decode_buf) {
         ESP_LOGE(AUDIO_PLAYER_TAG, "Failed to allocate buffers");
         if (read_buf) free(read_buf);
@@ -231,6 +242,7 @@ esp_err_t audio_i2s_player_play_file(const char *file_path)
         esp_audio_simple_dec_close(player->simple_dec);
         player->simple_dec = NULL;
         fclose(fp);
+        xSemaphoreGive(player->mutex);
         return ESP_ERR_NO_MEM;
     }
 
@@ -260,7 +272,7 @@ esp_err_t audio_i2s_player_play_file(const char *file_path)
             ret = esp_audio_simple_dec_process(player->simple_dec, &raw, &out_frame);
             
             if (ret == ESP_AUDIO_ERR_BUFF_NOT_ENOUGH) {
-                uint8_t *new_buf = realloc(decode_buf, out_frame.needed_size);
+                uint8_t *new_buf = heap_caps_realloc(decode_buf, out_frame.needed_size, MALLOC_CAP_DMA);
                 if (!new_buf) {
                     ESP_LOGE(AUDIO_PLAYER_TAG, "Failed to reallocate decode buffer");
                     result = ESP_ERR_NO_MEM;
@@ -348,13 +360,14 @@ esp_err_t audio_i2s_player_play_buffer(const uint8_t *buffer,
         esp_audio_err_t ret = esp_opus_dec_open(&opus_cfg, sizeof(opus_cfg), &player->opus_dec);
         if (ret != ESP_AUDIO_ERR_OK) {
             ESP_LOGE(AUDIO_PLAYER_TAG, "Failed to open Opus decoder: %d", ret);
+            xSemaphoreGive(player->mutex);
             return ESP_FAIL;
         }
 
         player->current_type = ESP_AUDIO_TYPE_OPUS;
         player->playing = true;
 
-        uint8_t *decode_buf = malloc(DECODE_BUFFER_SIZE);
+        uint8_t *decode_buf = heap_caps_malloc(DECODE_BUFFER_SIZE, MALLOC_CAP_DMA);
         if (!decode_buf) {
             ESP_LOGE(AUDIO_PLAYER_TAG, "Failed to allocate decode buffer");
             esp_opus_dec_close(player->opus_dec);
@@ -379,7 +392,7 @@ esp_err_t audio_i2s_player_play_buffer(const uint8_t *buffer,
             ret = esp_opus_dec_decode(player->opus_dec, &raw, &out_frame, &dec_info);
 
             if (ret == ESP_AUDIO_ERR_BUFF_NOT_ENOUGH) {
-                uint8_t *new_buf = realloc(decode_buf, out_frame.needed_size);
+                uint8_t *new_buf = heap_caps_realloc(decode_buf, out_frame.needed_size, MALLOC_CAP_DMA);
                 if (!new_buf) {
                     ESP_LOGE(AUDIO_PLAYER_TAG, "Failed to reallocate decode buffer");
                     result = ESP_ERR_NO_MEM;
@@ -418,99 +431,9 @@ esp_err_t audio_i2s_player_play_buffer(const uint8_t *buffer,
         player->opus_dec = NULL;
         player->playing = false;
 
-    } else if (audio_type == ESP_AUDIO_TYPE_AAC) {
-        esp_audio_simple_dec_cfg_t dec_cfg = {
-            .dec_type = ESP_AUDIO_SIMPLE_DEC_TYPE_AAC,
-            .dec_cfg = NULL,
-            .cfg_size = 0,
-        };
-
-        esp_audio_err_t ret = esp_audio_simple_dec_open(&dec_cfg, &player->simple_dec);
-        if (ret != ESP_AUDIO_ERR_OK) {
-            ESP_LOGE(AUDIO_PLAYER_TAG, "Failed to open AAC simple decoder: %d", ret);
-            return ESP_FAIL;
-        }
-
-        player->current_type = ESP_AUDIO_TYPE_AAC;
-        player->playing = true;
-
-        uint8_t *decode_buf = malloc(DECODE_BUFFER_SIZE);
-        if (!decode_buf) {
-            ESP_LOGE(AUDIO_PLAYER_TAG, "Failed to allocate decode buffer");
-            esp_audio_simple_dec_close(player->simple_dec);
-            player->simple_dec = NULL;
-            return ESP_ERR_NO_MEM;
-        }
-
-        bool info_logged = false;
-        esp_audio_simple_dec_raw_t raw = {
-            .buffer = (uint8_t *)buffer,
-            .len = length,
-            .eos = true,
-            .consumed = 0,
-        };
-
-        while (raw.len > 0 && player->playing) {
-            esp_audio_simple_dec_out_t out_frame = {
-                .buffer = decode_buf,
-                .len = DECODE_BUFFER_SIZE,
-                .decoded_size = 0,
-            };
-
-            ret = esp_audio_simple_dec_process(player->simple_dec, &raw, &out_frame);
-
-            if (ret == ESP_AUDIO_ERR_BUFF_NOT_ENOUGH) {
-                uint8_t *new_buf = realloc(decode_buf, out_frame.needed_size);
-                if (!new_buf) {
-                    ESP_LOGE(AUDIO_PLAYER_TAG, "Failed to reallocate decode buffer");
-                    result = ESP_ERR_NO_MEM;
-                    break;
-                }
-                decode_buf = new_buf;
-                out_frame.buffer = decode_buf;
-                out_frame.len = out_frame.needed_size;
-                continue;
-            }
-
-            if (ret != ESP_AUDIO_ERR_OK) {
-                ESP_LOGE(AUDIO_PLAYER_TAG, "AAC decode failed: %d", ret);
-                result = ESP_FAIL;
-                break;
-            }
-
-            raw.len -= raw.consumed;
-            raw.buffer += raw.consumed;
-
-            if (out_frame.decoded_size > 0) {
-                if (!info_logged) {
-                    esp_audio_simple_dec_info_t info;
-                    ret = esp_audio_simple_dec_get_info(player->simple_dec, &info);
-                    if (ret == ESP_AUDIO_ERR_OK) {
-                        ESP_LOGI(AUDIO_PLAYER_TAG, "Decoded audio: %lu Hz, %d ch, %d bit", 
-                                 info.sample_rate, info.channel, info.bits_per_sample);
-                        info_logged = true;
-                    }
-                }
-
-                size_t bytes_written = 0;
-                TickType_t timeout = pdMS_TO_TICKS(player->cfg.write_timeout_ms);
-                esp_err_t err = i2s_channel_write(player->tx, out_frame.buffer, 
-                                                   out_frame.decoded_size, &bytes_written, timeout);
-                if (err != ESP_OK) {
-                    ESP_LOGE(AUDIO_PLAYER_TAG, "I2S write failed: %s", esp_err_to_name(err));
-                    result = err;
-                    break;
-                }
-            }
-        }
-
-        free(decode_buf);
-        esp_audio_simple_dec_close(player->simple_dec);
-        player->simple_dec = NULL;
-        player->playing = false;
-
     } else {
         ESP_LOGE(AUDIO_PLAYER_TAG, "Unsupported audio type: %d", audio_type);
+        xSemaphoreGive(player->mutex);
         return ESP_ERR_NOT_SUPPORTED;
     }
 
@@ -608,7 +531,7 @@ char* select_file_to_play(int index) {
     // ReSharper disable once CppReplaceMemsetWithZeroInitialization
     static char _filename[255];
     memset(_filename, 0, sizeof(_filename));
-    snprintf(_filename, sizeof(_filename), "%s/bell_%d.aac", AUDIO_PLAYER_DIR, index + 1);
+    snprintf(_filename, sizeof(_filename), "%s/bell_%d.wav", AUDIO_PLAYER_DIR, index + 1);
 
     char* file_path = strdup(_filename);
     if (!file_path) {

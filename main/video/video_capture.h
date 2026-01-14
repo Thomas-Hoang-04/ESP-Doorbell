@@ -50,7 +50,7 @@ extern "C" {
 #define VIDEO_FPS               24
 
 #define AUDIO_FORMAT            ESP_CAPTURE_FMT_ID_AAC
-#define AUDIO_SAMPLE_RATE       16000
+#define AUDIO_SAMPLE_RATE       48000
 #define AUDIO_CHANNELS          2
 #define AUDIO_BITS_PER_SAMPLE   16
 
