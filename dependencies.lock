@@ -79,7 +79,7 @@ dependencies:
       type: service
     version: 1.1.0
   espressif/esp_capture:
-    component_hash: 2c39fa98bcab46fa8f41954e1a1765260414ba651bf6aa5ec9101af07513c384
+    component_hash: cbca2ae239b6a7365dfd86afe75f321be0c3f3d555e96a3c99ddb564a6f06102
     dependencies:
     - name: espressif/cmake_utilities
       registry_url: https://components.espressif.com
@@ -123,7 +123,7 @@ dependencies:
     source:
       registry_url: https://components.espressif.com/
       type: service
-    version: 0.7.8
+    version: 0.7.8~1
   espressif/esp_codec_dev:
     component_hash: 0d9e9bc288156eb55f79338d312e1ebf8c9dfbd5e7d13ef0f20ccb031b4e15cf
     dependencies:
@@ -135,7 +135,7 @@ dependencies:
       type: service
     version: 1.5.4
   espressif/esp_h264:
-    component_hash: 53e10056d88fa91ed668f64d8699c9917e7bb76c750ff69efa1dbeaa968b5dc0
+    component_hash: e0b0212f2bdf1fc289a7370e6e7e69cd19883ae52661c746e9023a7cc7f22255
     dependencies:
     - name: idf
       require: private
@@ -146,7 +146,7 @@ dependencies:
     targets:
     - esp32s3
     - esp32p4
-    version: 1.2.0
+    version: 1.2.0~1
   espressif/esp_image_effects:
     component_hash: a35037db02862d3cef6f72c25f422ae62da6e6c88219ce03c9ea24e0315ceaaa
     dependencies:
@@ -217,7 +217,7 @@ dependencies:
       type: service
     version: 0.5.3
   espressif/esp_websocket_client:
-    component_hash: 723aba370113196c66321442426cd6452c351eef31c85c83bd1446831ef9f8f4
+    component_hash: c5a067a9fddea370c478017e66fac302f4b79c3d4027e9bdd42a019786cceb92
     dependencies:
     - name: idf
       require: private
@@ -225,7 +225,7 @@ dependencies:
     source:
       registry_url: https://components.espressif.com/
       type: service
-    version: 1.6.0
+    version: 1.6.1
   espressif/gmf_audio:
     component_hash: 7d51b18cbfe05670d92e63f87538c795ce0e9350c86e278996d51c09aa4b30e8
     dependencies:
@@ -246,12 +246,12 @@ dependencies:
       type: service
     version: 0.7.2
   espressif/gmf_core:
-    component_hash: 244a6ccddb77b001600ec80f311647044c235e50c227db739abeb42d763f862f
+    component_hash: c93ce72be18e9c86380a0ce65929c23eb377c853fc58a888889e58b3f3624aed
     dependencies: []
     source:
       registry_url: https://components.espressif.com
       type: service
-    version: 0.7.5
+    version: 0.7.9
   espressif/gmf_video:
     component_hash: f846518801ae7e748ecde24e5ac4b21518ca42fffb533b9d9d67a4cd7ed2c3b8
     dependencies:

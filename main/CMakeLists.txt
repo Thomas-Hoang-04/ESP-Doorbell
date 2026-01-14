@@ -44,6 +44,6 @@ idf_component_register(SRCS "main.c" ${SOURCES}
                        PRIV_REQUIRES ${DEPS}
                        INCLUDE_DIRS ""
                        EMBED_TXTFILES "network/certs/ca.pem"
-                                      "network/certs/client.pem"
-                                      "network/certs/client.key")
+                                      "network/certs/esp32_client.pem"
+                                      "network/certs/esp32_client.key")
 
