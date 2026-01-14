@@ -304,6 +304,10 @@ uint8_t ble_prov_gatt_get_status(void) {
     return prov_status;
 }
 
+uint16_t ble_prov_gatt_get_conn_handle(void) {
+    return current_conn_handle;
+}
+
 void ble_prov_gatt_notify_status(uint16_t conn_handle) {
     if (status_subscribed && conn_handle != BLE_HS_CONN_HANDLE_NONE) {
         struct os_mbuf *om = ble_hs_mbuf_from_flat(&prov_status, sizeof(prov_status));

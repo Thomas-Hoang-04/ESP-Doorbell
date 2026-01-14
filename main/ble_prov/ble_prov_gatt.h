@@ -68,6 +68,13 @@ void ble_prov_gatt_notify_status(uint16_t conn_handle);
 void ble_prov_gatt_notify_device_key(uint16_t conn_handle);
 
 /**
+ * @brief Get current BLE connection handle
+ *
+ * @return Connection handle or BLE_HS_CONN_HANDLE_NONE if not connected
+ */
+uint16_t ble_prov_gatt_get_conn_handle(void);
+
+/**
  * @brief Reset GATT state on disconnect
  *
  * Clears pending credentials and subscription flags.

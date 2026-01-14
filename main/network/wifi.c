@@ -18,22 +18,41 @@
 static EventGroupHandle_t wifi_event_group;
 
 static uint8_t retry_cnt = 0;
+static wifi_status_cb_t status_callback = NULL;
+static wifi_connect_status_t last_disconnect_reason = WIFI_STATUS_FAILED;
+
+void wifi_set_status_callback(wifi_status_cb_t cb) {
+    status_callback = cb;
+}
 
 static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data) {
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START)
         esp_wifi_connect();
     else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
+        wifi_event_sta_disconnected_t *disconn = (wifi_event_sta_disconnected_t *)event_data;
+        if (disconn->reason == WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT ||
+            disconn->reason == WIFI_REASON_AUTH_FAIL ||
+            disconn->reason == WIFI_REASON_HANDSHAKE_TIMEOUT) {
+            last_disconnect_reason = WIFI_STATUS_WRONG_PASSWORD;
+            ESP_LOGW(WIFI_TAG, "WiFi auth failed (reason: %d) - likely wrong password", disconn->reason);
+        } else {
+            last_disconnect_reason = WIFI_STATUS_FAILED;
+        }
         if (retry_cnt < WIFI_MAXIMUM_RETRY) {
             esp_wifi_connect();
             retry_cnt++;
             ESP_LOGI(WIFI_TAG, "WiFi connection failed, retry %d of %d", retry_cnt, WIFI_MAXIMUM_RETRY);
-        } else xEventGroupSetBits(wifi_event_group, WIFI_FAILED);
+        } else {
+            xEventGroupSetBits(wifi_event_group, WIFI_FAILED);
+            if (status_callback) status_callback(last_disconnect_reason);
+        }
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t *event = event_data;
         char ip_buf[IP4ADDR_STRLEN_MAX] = {0};
         ESP_LOGI(WIFI_TAG, "WiFi connected, IP: %s", esp_ip4addr_ntoa(&event->ip_info.ip, ip_buf, IP4ADDR_STRLEN_MAX));
         xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED);
         retry_cnt = 0;
+        if (status_callback) status_callback(WIFI_STATUS_CONNECTED);
     }
 }
 

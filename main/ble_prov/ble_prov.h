@@ -26,6 +26,7 @@ typedef enum {
     BLE_PROV_STATUS_CONNECTED,      /**< Wi-Fi connected successfully */
     BLE_PROV_STATUS_FAILED,         /**< Wi-Fi connection failed */
     BLE_PROV_STATUS_TIMEOUT,        /**< Provisioning timeout */
+    BLE_PROV_STATUS_WRONG_PASSWORD, /**< Wrong Wi-Fi password */
 } ble_prov_status_t;
 
 /**

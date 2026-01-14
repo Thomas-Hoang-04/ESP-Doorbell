@@ -35,6 +35,17 @@ extern "C" {
 /** @brief Event group bit indicating WiFi connection failure */
 #define WIFI_FAILED BIT1
 
+typedef enum {
+    WIFI_STATUS_CONNECTED = 0,
+    WIFI_STATUS_FAILED,
+    WIFI_STATUS_WRONG_PASSWORD,
+    WIFI_STATUS_TIMEOUT,
+} wifi_connect_status_t;
+
+typedef void (*wifi_status_cb_t)(wifi_connect_status_t status);
+
+void wifi_set_status_callback(wifi_status_cb_t cb);
+
 /**
  * @brief Initialize WiFi in Station mode and connect to configured AP
  *
