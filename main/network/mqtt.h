@@ -25,8 +25,6 @@ extern "C" {
 #define MQTT_HOST CONFIG_MQTT_BROKER_URL
 /** @brief MQTT broker port from Kconfig */
 #define MQTT_PORT CONFIG_MQTT_BROKER_PORT
-/** @brief MQTT client identifier from Kconfig */
-#define MQTT_CLIENT_ID CONFIG_MQTT_CLIENT_ID
 
 // ---------------------------------------------------------------------------
 // Message Queue (for received messages)

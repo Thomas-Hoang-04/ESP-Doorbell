@@ -3,13 +3,11 @@ menu "Doorbell Configuration"
     menu "WiFi Configuration"
         config WIFI_SSID
             string "WiFi SSID"
-            default "myssid"
             help
                 SSID (network name) for the example to connect to.
 
         config WIFI_PASSWORD
             string "WiFi Password"
-            default "mypassword"
             help
                 WiFi password (WPA or WPA2) for the example to use.
 
@@ -53,7 +51,7 @@ menu "Doorbell Configuration"
     menu "MQTT Configuration"
         config MQTT_BROKER_URL
             string "MQTT Broker URL"
-            default "mqtts://mqtt.thingsboard.cloud"
+            default "mqtts://doorbell-thomas.site"
             help
                 URL of the broker to connect to (use mqtts:// for SSL, mqtt:// for MQTT)
 
@@ -83,30 +81,21 @@ menu "Doorbell Configuration"
 
         config MQTT_USERNAME
             string "MQTT Username"
-            default "device"
             depends on MQTT_AUTH_USERNAME_PASSWORD
             help
                 MQTT username for authentication
 
         config MQTT_PASSWORD
             string "MQTT Password"
-            default "password"
             depends on MQTT_AUTH_USERNAME_PASSWORD
             help
                 MQTT password for authentication
 
         config MQTT_ACCESS_TOKEN
             string "MQTT Access Token"
-            default "YOUR_DEVICE_ACCESS_TOKEN"
             depends on MQTT_AUTH_ACCESS_TOKEN
             help
                 Access token for MQTT authentication (used as username, password left empty)
-
-        config MQTT_CLIENT_ID
-            string "MQTT Client ID"
-            default "esp32_device"
-            help
-                MQTT client identifier. TODO: Set this to match the device UUID in your backend database.
 
         menu "Topics"
             config MQTT_STREAM_CONTROL_TOPIC
@@ -130,18 +119,18 @@ menu "Doorbell Configuration"
                 help
                     MQTT topic for publishing bell press events.
                     %s will be replaced with device ID (MQTT_CLIENT_ID).
+
+            config MQTT_SETTINGS_TOPIC
+                string "Settings Control Topic"
+                default "doorbell/%s/settings"
+                help
+                    MQTT topic for receiving device settings commands.
+                    %s will be replaced with device ID.
+                    Expected payload: {"action":"set_chime","chime_index":1}
         endmenu
     endmenu
 
     menu "Capture Settings"
-        config CAPTURE_TIMEOUT_SEC
-            int "Capture timeout (seconds)"
-            default 60
-            range 10 300
-            help
-                Automatic capture timeout after button press.
-                Set to 0 for indefinite capture (requires manual stop).
-
         config RECORDING_RETENTION_HOURS
             int "Recording retention (hours)"
             default 24
@@ -160,7 +149,7 @@ menu "Doorbell Configuration"
                 Interval in seconds between heartbeat messages sent to the backend.
     endmenu
 
-    menu "BLE Provisioning" 
+    menu "BLE Provisioning"
         config PROV_DEVICE_NAME_PREFIX
             string "Device Name Prefix"
             default "DOORBELL_"

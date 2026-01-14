@@ -1,28 +1,33 @@
 #include "mqtt.h"
 #include "esp_log.h"
+#include "nvs_flash.h"
 #include <string.h>
 #include <cJSON.h>
 
 #include "../video/video_capture.h"
 #include "../websocket/ws_stream.h"
 #include "../ble_prov/ble_prov_nvs.h"
+#include "../settings/chime_settings.h"
 
 extern const uint8_t ca_pem_start[]     asm("_binary_ca_pem_start");
 extern const uint8_t ca_pem_end[]       asm("_binary_ca_pem_end");
-extern const uint8_t client_pem_start[] asm("_binary_client_pem_start");
-extern const uint8_t client_pem_end[]   asm("_binary_client_pem_end");
-extern const uint8_t client_key_start[] asm("_binary_client_key_start");
-extern const uint8_t client_key_end[]   asm("_binary_client_key_end");
+extern const uint8_t esp32_client_pem_start[] asm("_binary_esp32_client_pem_start");
+extern const uint8_t esp32_client_pem_end[]   asm("_binary_esp32_client_pem_end");
+extern const uint8_t esp32_client_key_start[] asm("_binary_esp32_client_key_start");
+extern const uint8_t esp32_client_key_end[]   asm("_binary_esp32_client_key_end");
 
 // Stream Control Handler
 static void handle_stream_control(const char *action);
+
+// Settings Command Handler
+static void handle_settings_command(const char *json_data, int data_len);
 
 // JSON Parser
 static const char* parse_stream_action(const char *json_data, int data_len);
 
 // MQTT Client Handle
 static esp_mqtt_client_handle_t s_mqtt_client = NULL;
-static char s_device_id[64] = MQTT_CLIENT_ID; // Default to Kconfig ID
+static char s_device_id[64] = {0}; // Default to Kconfig ID
 
 // ---------------------------------------------------------------------------
 // Logging Utility
@@ -104,12 +109,13 @@ static void mqtt_event_handler(void* args, esp_event_base_t event_base, int32_t 
 
         case MQTT_EVENT_CONNECTED:
             ESP_LOGI(MQTT_TAG, "Connected to MQTT host: %s", MQTT_HOST);
-            // Subscribe to stream control topic
             char topic[128];
             snprintf(topic, sizeof(topic), CONFIG_MQTT_STREAM_CONTROL_TOPIC, s_device_id);
             msg_id = esp_mqtt_client_subscribe(client, topic, 1);
-            ESP_LOGI(MQTT_TAG, "Subscribed to stream control topic: %s, msg_id: %d", 
-                     topic, msg_id);
+            ESP_LOGI(MQTT_TAG, "Subscribed to stream control topic: %s, msg_id: %d", topic, msg_id);
+            snprintf(topic, sizeof(topic), CONFIG_MQTT_SETTINGS_TOPIC, s_device_id);
+            msg_id = esp_mqtt_client_subscribe(client, topic, 1);
+            ESP_LOGI(MQTT_TAG, "Subscribed to settings topic: %s, msg_id: %d", topic, msg_id);
             break;
 
         case MQTT_EVENT_DISCONNECTED:
@@ -133,10 +139,16 @@ static void mqtt_event_handler(void* args, esp_event_base_t event_base, int32_t 
             ESP_LOGI(MQTT_TAG, "Topic: %.*s", event->topic_len, event->topic);
             ESP_LOGD(MQTT_TAG, "Data: %.*s", event->data_len, event->data);
             
-            // Parse and handle stream control commands
-            const char *action = parse_stream_action(event->data, event->data_len);
-            if (action) {
-                handle_stream_control(action);
+            char settings_topic[128];
+            snprintf(settings_topic, sizeof(settings_topic), CONFIG_MQTT_SETTINGS_TOPIC, s_device_id);
+            if (event->topic_len == (int)strlen(settings_topic) && 
+                strncmp(event->topic, settings_topic, event->topic_len) == 0) {
+                handle_settings_command(event->data, event->data_len);
+            } else {
+                const char *action = parse_stream_action(event->data, event->data_len);
+                if (action) {
+                    handle_stream_control(action);
+                }
             }
             break;
 
@@ -180,7 +192,7 @@ esp_mqtt_client_handle_t init_mqtt(void) {
             },
             .verification = {
                 .certificate = (const char *)ca_pem_start,
-                .skip_cert_common_name_check = true,
+                .skip_cert_common_name_check = false,
             }
         },
         .credentials = {
@@ -192,8 +204,8 @@ esp_mqtt_client_handle_t init_mqtt(void) {
             .username = CONFIG_MQTT_USERNAME,
             .authentication = {
                 .password = CONFIG_MQTT_PASSWORD,
-                .certificate = (const char *)client_pem_start,
-                .key = (const char *)client_key_start,
+                .certificate = (const char *)esp32_client_pem_start,
+                .key = (const char *)esp32_client_key_start,
             }
 #endif
         },
@@ -304,7 +316,6 @@ static void handle_stream_control(const char *action) {
     if (strcmp(action, "start_stream") == 0) {
         ESP_LOGI(MQTT_TAG, "Stream control: Starting stream");
         
-        // Enable WebSocket streaming (Capture is already running)
         av_handles.streaming_enabled = true;
         esp_err_t err = ws_stream_enable(true);
         if (err != ESP_OK) {
@@ -315,10 +326,56 @@ static void handle_stream_control(const char *action) {
     } else if (strcmp(action, "stop_stream") == 0) {
         ESP_LOGI(MQTT_TAG, "Stream control: Stopping stream");
         
-        // Disable WebSocket streaming
         av_handles.streaming_enabled = false;
         ws_stream_enable(false);
         
         ESP_LOGI(MQTT_TAG, "Streaming pushed to background (recording continues)");
     }
+}
+
+static void handle_settings_command(const char *json_data, int data_len) {
+    if (!json_data || data_len <= 0) {
+        ESP_LOGW(MQTT_TAG, "Empty settings command");
+        return;
+    }
+
+    char *json_copy = strndup(json_data, data_len);
+    if (!json_copy) {
+        ESP_LOGE(MQTT_TAG, "Failed to allocate memory for settings parsing");
+        return;
+    }
+
+    cJSON *root = cJSON_Parse(json_copy);
+    free(json_copy);
+
+    if (!root) {
+        ESP_LOGW(MQTT_TAG, "Failed to parse settings JSON");
+        return;
+    }
+
+    const cJSON *action_item = cJSON_GetObjectItemCaseSensitive(root, "action");
+    if (!cJSON_IsString(action_item) || !action_item->valuestring) {
+        ESP_LOGW(MQTT_TAG, "Missing 'action' in settings command");
+        cJSON_Delete(root);
+        return;
+    }
+
+    if (strcmp(action_item->valuestring, "set_chime") == 0) {
+        const cJSON *chime_item = cJSON_GetObjectItemCaseSensitive(root, "chime_index");
+        if (cJSON_IsNumber(chime_item)) {
+            int chime_index = chime_item->valueint;
+            esp_err_t err = chime_settings_set_index(chime_index);
+            if (err == ESP_OK) {
+                ESP_LOGI(MQTT_TAG, "Chime index set to: %d", chime_index);
+            } else {
+                ESP_LOGW(MQTT_TAG, "Failed to set chime index: %s", esp_err_to_name(err));
+            }
+        } else {
+            ESP_LOGW(MQTT_TAG, "Missing or invalid 'chime_index' in set_chime command");
+        }
+    } else {
+        ESP_LOGW(MQTT_TAG, "Unknown settings action: %s", action_item->valuestring);
+    }
+
+    cJSON_Delete(root);
 }
